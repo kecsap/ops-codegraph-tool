@@ -1,0 +1,40 @@
+name: Codegraph Impact Analysis
+on: [pull_request]
+jobs:
+  impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --legacy-peer-deps
+      - run: npx codegraph build
+      - name: Run impact analysis
+        run: |
+          npx codegraph diff-impact --ref origin/${{ github.base_ref }} --json > impact.json || echo '{"affectedFiles":[],"summary":null}' > impact.json
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const impact = JSON.parse(fs.readFileSync('impact.json', 'utf-8'));
+            if (!impact.summary) {
+              console.log('No impact data to report.');
+              return;
+            }
+            const body = `## Codegraph Impact Analysis\n\n` +
+              `**${impact.summary.functionsChanged} functions changed** -> ` +
+              `**${impact.summary.callersAffected} callers affected** across ` +
+              `**${impact.summary.filesAffected} files**.\n\n` +
+              (impact.affectedFunctions || []).slice(0, 20).map(f =>
+                `- \`${f.name}\` in \`${f.file}:${f.line}\` (${f.transitiveCallers} transitive callers)`
+              ).join('\n');
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

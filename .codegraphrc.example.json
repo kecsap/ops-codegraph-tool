@@ -1,0 +1,18 @@
+{
+  "include": ["src/**", "lib/**"],
+  "exclude": ["**/*.test.js", "**/__mocks__/**"],
+  "ignoreDirs": ["node_modules", ".git", "dist", "vendor"],
+  "extensions": [".js", ".ts", ".tsx", ".py"],
+  "aliases": {
+    "@/": "./src/",
+    "@utils/": "./src/utils/"
+  },
+  "build": {
+    "incremental": true,
+    "dbPath": ".codegraph/graph.db"
+  },
+  "query": {
+    "defaultDepth": 3,
+    "defaultLimit": 20
+  }
+}

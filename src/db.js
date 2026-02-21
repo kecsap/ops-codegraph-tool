@@ -1,0 +1,117 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import { warn, debug, info } from './logger.js';
+
+// ─── Schema Migrations ─────────────────────────────────────────────────
+export const MIGRATIONS = [
+  {
+    version: 1,
+    up: `
+      CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        file TEXT NOT NULL,
+        line INTEGER,
+        end_line INTEGER,
+        UNIQUE(name, kind, file, line)
+      );
+      CREATE TABLE IF NOT EXISTS edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id INTEGER NOT NULL,
+        target_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        confidence REAL DEFAULT 1.0,
+        dynamic INTEGER DEFAULT 0,
+        FOREIGN KEY(source_id) REFERENCES nodes(id),
+        FOREIGN KEY(target_id) REFERENCES nodes(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
+      CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file);
+      CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
+      CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
+      CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
+      CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
+    `
+  },
+  {
+    version: 2,
+    up: `
+      CREATE INDEX IF NOT EXISTS idx_nodes_name_kind_file ON nodes(name, kind, file);
+      CREATE INDEX IF NOT EXISTS idx_nodes_file_kind ON nodes(file, kind);
+      CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_edges_target_kind ON edges(target_id, kind);
+    `
+  },
+  {
+    version: 3,
+    up: `
+      CREATE TABLE IF NOT EXISTS file_hashes (
+        file TEXT PRIMARY KEY,
+        hash TEXT NOT NULL,
+        mtime INTEGER NOT NULL
+      );
+    `
+  }
+];
+
+export function openDb(dbPath) {
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  return db;
+}
+
+export function initSchema(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)`);
+
+  const row = db.prepare('SELECT version FROM schema_version').get();
+  let currentVersion = row ? row.version : 0;
+
+  if (!row) {
+    db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
+  }
+
+  for (const migration of MIGRATIONS) {
+    if (migration.version > currentVersion) {
+      debug(`Running migration v${migration.version}`);
+      db.exec(migration.up);
+      db.prepare('UPDATE schema_version SET version = ?').run(migration.version);
+      currentVersion = migration.version;
+    }
+  }
+
+  try { db.exec('ALTER TABLE nodes ADD COLUMN end_line INTEGER'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE edges ADD COLUMN confidence REAL DEFAULT 1.0'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE edges ADD COLUMN dynamic INTEGER DEFAULT 0'); } catch { /* already exists */ }
+}
+
+export function findDbPath(customPath) {
+  if (customPath) return path.resolve(customPath);
+  let dir = process.cwd();
+  while (true) {
+    const candidate = path.join(dir, '.codegraph', 'graph.db');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(process.cwd(), '.codegraph', 'graph.db');
+}
+
+/**
+ * Open a database in readonly mode, with a user-friendly error if the DB doesn't exist.
+ */
+export function openReadonlyOrFail(customPath) {
+  const dbPath = findDbPath(customPath);
+  if (!fs.existsSync(dbPath)) {
+    console.error(
+      `No codegraph database found at ${dbPath}.\n` +
+      `Run "codegraph build" first to analyze your codebase.`
+    );
+    process.exit(1);
+  }
+  return new Database(dbPath, { readonly: true });
+}

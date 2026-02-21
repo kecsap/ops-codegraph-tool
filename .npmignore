@@ -1,0 +1,7 @@
+.git/
+.github/
+.codegraph/
+tests/
+*.db
+.codegraphrc.json
+codegraph-improvements.md
