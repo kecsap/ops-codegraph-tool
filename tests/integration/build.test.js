@@ -2,11 +2,12 @@
  * Integration tests for buildGraph — builds from the fixture project
  * and verifies the resulting database contents.
  */
-import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import Database from 'better-sqlite3';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildGraph } from '../../src/builder.js';
 
 // ES-module versions of the sample-project fixture so the parser
@@ -58,7 +59,10 @@ describe('buildGraph', () => {
 
   test('nodes table contains expected file nodes', () => {
     const db = new Database(dbPath, { readonly: true });
-    const files = db.prepare("SELECT file FROM nodes WHERE kind = 'file'").all().map(r => r.file);
+    const files = db
+      .prepare("SELECT file FROM nodes WHERE kind = 'file'")
+      .all()
+      .map((r) => r.file);
     db.close();
     expect(files).toContain('math.js');
     expect(files).toContain('utils.js');
@@ -67,9 +71,10 @@ describe('buildGraph', () => {
 
   test('nodes table contains expected function/class nodes', () => {
     const db = new Database(dbPath, { readonly: true });
-    const names = db.prepare(
-      "SELECT name FROM nodes WHERE kind IN ('function', 'class', 'method')"
-    ).all().map(r => r.name);
+    const names = db
+      .prepare("SELECT name FROM nodes WHERE kind IN ('function', 'class', 'method')")
+      .all()
+      .map((r) => r.name);
     db.close();
     expect(names).toContain('add');
     expect(names).toContain('multiply');
@@ -81,14 +86,16 @@ describe('buildGraph', () => {
 
   test('edges table contains import edges', () => {
     const db = new Database(dbPath, { readonly: true });
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT s.file as src, t.file as tgt FROM edges e
       JOIN nodes s ON e.source_id = s.id
       JOIN nodes t ON e.target_id = t.id
       WHERE e.kind = 'imports' AND s.kind = 'file' AND t.kind = 'file'
-    `).all();
+    `)
+      .all();
     db.close();
-    const pairs = edges.map(e => `${e.src}->${e.tgt}`);
+    const pairs = edges.map((e) => `${e.src}->${e.tgt}`);
     expect(pairs).toContain('utils.js->math.js');
     expect(pairs).toContain('index.js->utils.js');
     expect(pairs).toContain('index.js->math.js');
@@ -96,14 +103,16 @@ describe('buildGraph', () => {
 
   test('edges table contains call edges', () => {
     const db = new Database(dbPath, { readonly: true });
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT s.name as caller, t.name as callee FROM edges e
       JOIN nodes s ON e.source_id = s.id
       JOIN nodes t ON e.target_id = t.id
       WHERE e.kind = 'calls'
-    `).all();
+    `)
+      .all();
     db.close();
-    const pairs = edges.map(e => `${e.caller}->${e.callee}`);
+    const pairs = edges.map((e) => `${e.caller}->${e.callee}`);
     expect(pairs).toContain('square->multiply');
     expect(pairs).toContain('sumOfSquares->add');
     expect(pairs).toContain('sumOfSquares->square');
@@ -111,7 +120,10 @@ describe('buildGraph', () => {
 
   test('file_hashes table populated for all files', () => {
     const db = new Database(dbPath, { readonly: true });
-    const hashes = db.prepare('SELECT file FROM file_hashes').all().map(r => r.file);
+    const hashes = db
+      .prepare('SELECT file FROM file_hashes')
+      .all()
+      .map((r) => r.file);
     db.close();
     expect(hashes).toHaveLength(3);
     expect(hashes).toContain('math.js');

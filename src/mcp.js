@@ -6,8 +6,8 @@
  */
 
 import { createRequire } from 'node:module';
-import { findDbPath } from './db.js';
 import { findCycles } from './cycles.js';
+import { findDbPath } from './db.js';
 
 const TOOLS = [
   {
@@ -17,10 +17,14 @@ const TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Function name to query (supports partial match)' },
-        depth: { type: 'number', description: 'Traversal depth for transitive callers', default: 2 }
+        depth: {
+          type: 'number',
+          description: 'Traversal depth for transitive callers',
+          default: 2,
+        },
       },
-      required: ['name']
-    }
+      required: ['name'],
+    },
   },
   {
     name: 'file_deps',
@@ -28,10 +32,10 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        file: { type: 'string', description: 'File path (partial match supported)' }
+        file: { type: 'string', description: 'File path (partial match supported)' },
       },
-      required: ['file']
-    }
+      required: ['file'],
+    },
   },
   {
     name: 'impact_analysis',
@@ -39,18 +43,18 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        file: { type: 'string', description: 'File path to analyze' }
+        file: { type: 'string', description: 'File path to analyze' },
       },
-      required: ['file']
-    }
+      required: ['file'],
+    },
   },
   {
     name: 'find_cycles',
     description: 'Detect circular dependencies in the codebase',
     inputSchema: {
       type: 'object',
-      properties: {}
-    }
+      properties: {},
+    },
   },
   {
     name: 'module_map',
@@ -58,10 +62,10 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'Number of top files to show', default: 20 }
-      }
-    }
-  }
+        limit: { type: 'number', description: 'Number of top files to show', default: 20 },
+      },
+    },
+  },
 ];
 
 export { TOOLS };
@@ -80,20 +84,22 @@ export async function startMCPServer(customDbPath) {
   } catch {
     console.error(
       'MCP server requires @modelcontextprotocol/sdk.\n' +
-      'Install it with: npm install @modelcontextprotocol/sdk'
+        'Install it with: npm install @modelcontextprotocol/sdk',
     );
     process.exit(1);
   }
 
   // Lazy import query functions to avoid circular deps at module load
-  const { queryNameData, impactAnalysisData, moduleMapData, fileDepsData } = await import('./queries.js');
+  const { queryNameData, impactAnalysisData, moduleMapData, fileDepsData } = await import(
+    './queries.js'
+  );
 
   const require = createRequire(import.meta.url);
   const Database = require('better-sqlite3');
 
   const server = new Server(
     { name: 'codegraph', version: '1.0.0' },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler('tools/list', async () => ({ tools: TOOLS }));

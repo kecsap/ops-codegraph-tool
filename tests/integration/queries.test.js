@@ -18,33 +18,34 @@
  *     handleRoute    → formatResponse
  *     authenticate   → validateToken
  */
-import { describe, test, expect, beforeAll, afterAll } from 'vitest';
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { initSchema } from '../../src/db.js';
 import {
-  queryNameData,
-  impactAnalysisData,
-  moduleMapData,
+  diffImpactData,
   fileDepsData,
   fnDepsData,
   fnImpactData,
-  diffImpactData,
+  impactAnalysisData,
+  moduleMapData,
+  queryNameData,
 } from '../../src/queries.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 function insertNode(db, name, kind, file, line) {
-  return db.prepare(
-    'INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)'
-  ).run(name, kind, file, line).lastInsertRowid;
+  return db
+    .prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)')
+    .run(name, kind, file, line).lastInsertRowid;
 }
 
 function insertEdge(db, sourceId, targetId, kind) {
   db.prepare(
-    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)'
+    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)',
   ).run(sourceId, targetId, kind);
 }
 
@@ -98,10 +99,10 @@ afterAll(() => {
 describe('queryNameData', () => {
   test('finds exact symbol with callers and callees', () => {
     const data = queryNameData('authenticate', dbPath);
-    const fn = data.results.find(r => r.kind === 'function' && r.name === 'authenticate');
+    const fn = data.results.find((r) => r.kind === 'function' && r.name === 'authenticate');
     expect(fn).toBeDefined();
-    expect(fn.callers.map(c => c.name)).toContain('authMiddleware');
-    expect(fn.callees.map(c => c.name)).toContain('validateToken');
+    expect(fn.callers.map((c) => c.name)).toContain('authMiddleware');
+    expect(fn.callees.map((c) => c.name)).toContain('validateToken');
   });
 
   test('returns empty results for nonexistent name', () => {
@@ -111,7 +112,7 @@ describe('queryNameData', () => {
 
   test('partial match returns multiple results', () => {
     const data = queryNameData('auth', dbPath);
-    const names = data.results.map(r => r.name);
+    const names = data.results.map((r) => r.name);
     expect(names).toContain('authenticate');
     expect(names).toContain('authMiddleware');
     expect(data.results.length).toBeGreaterThanOrEqual(2);
@@ -125,10 +126,10 @@ describe('impactAnalysisData', () => {
     const data = impactAnalysisData('auth.js', dbPath);
     expect(data.sources).toContain('auth.js');
 
-    const level1Files = data.levels[1].map(n => n.file);
+    const level1Files = data.levels[1].map((n) => n.file);
     expect(level1Files).toContain('middleware.js');
 
-    const level2Files = data.levels[2].map(n => n.file);
+    const level2Files = data.levels[2].map((n) => n.file);
     expect(level2Files).toContain('routes.js');
 
     expect(data.totalDependents).toBe(2);
@@ -168,9 +169,9 @@ describe('fileDepsData', () => {
     const data = fileDepsData('middleware.js', dbPath);
     const r = data.results[0];
     expect(r.file).toBe('middleware.js');
-    expect(r.imports.map(i => i.file)).toContain('auth.js');
-    expect(r.importedBy.map(i => i.file)).toContain('routes.js');
-    expect(r.definitions.map(d => d.name)).toContain('authMiddleware');
+    expect(r.imports.map((i) => i.file)).toContain('auth.js');
+    expect(r.importedBy.map((i) => i.file)).toContain('routes.js');
+    expect(r.definitions.map((d) => d.name)).toContain('authMiddleware');
   });
 
   test('returns empty for unknown file', () => {
@@ -185,17 +186,17 @@ describe('fnDepsData', () => {
   test('returns callees and callers for handleRoute', () => {
     const data = fnDepsData('handleRoute', dbPath);
     const r = data.results[0];
-    expect(r.callees.map(c => c.name)).toContain('authMiddleware');
-    expect(r.callees.map(c => c.name)).toContain('formatResponse');
+    expect(r.callees.map((c) => c.name)).toContain('authMiddleware');
+    expect(r.callees.map((c) => c.name)).toContain('formatResponse');
     expect(r.callers).toHaveLength(0);
   });
 
   test('returns callers from upstream for authMiddleware', () => {
     const data = fnDepsData('authMiddleware', dbPath);
     const r = data.results[0];
-    expect(r.callees.map(c => c.name)).toContain('authenticate');
-    expect(r.callees.map(c => c.name)).toContain('validateToken');
-    expect(r.callers.map(c => c.name)).toContain('handleRoute');
+    expect(r.callees.map((c) => c.name)).toContain('authenticate');
+    expect(r.callees.map((c) => c.name)).toContain('validateToken');
+    expect(r.callers.map((c) => c.name)).toContain('handleRoute');
   });
 });
 
@@ -206,10 +207,10 @@ describe('fnImpactData', () => {
     const data = fnImpactData('authenticate', dbPath);
     const r = data.results[0];
 
-    const level1 = r.levels[1].map(n => n.name);
+    const level1 = r.levels[1].map((n) => n.name);
     expect(level1).toContain('authMiddleware');
 
-    const level2 = r.levels[2].map(n => n.name);
+    const level2 = r.levels[2].map((n) => n.name);
     expect(level2).toContain('handleRoute');
 
     expect(r.totalDependents).toBe(2);

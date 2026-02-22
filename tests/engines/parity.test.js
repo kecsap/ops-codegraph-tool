@@ -7,9 +7,21 @@
  * Skipped when the native engine is not installed.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createParsers, getParser, extractSymbols, extractHCLSymbols, extractPythonSymbols, extractGoSymbols, extractRustSymbols, extractJavaSymbols, extractCSharpSymbols, extractRubySymbols, extractPHPSymbols } from '../../src/parser.js';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { isNativeAvailable } from '../../src/native.js';
+import {
+  createParsers,
+  extractCSharpSymbols,
+  extractGoSymbols,
+  extractHCLSymbols,
+  extractJavaSymbols,
+  extractPHPSymbols,
+  extractPythonSymbols,
+  extractRubySymbols,
+  extractRustSymbols,
+  extractSymbols,
+  getParser,
+} from '../../src/parser.js';
 
 let native;
 let parsers;
@@ -26,15 +38,23 @@ function wasmExtract(code, filePath) {
   const isCSharp = filePath.endsWith('.cs');
   const isRuby = filePath.endsWith('.rb');
   const isPHP = filePath.endsWith('.php');
-  return isHCL ? extractHCLSymbols(tree, filePath)
-    : isPython ? extractPythonSymbols(tree, filePath)
-    : isGo ? extractGoSymbols(tree, filePath)
-    : isRust ? extractRustSymbols(tree, filePath)
-    : isJava ? extractJavaSymbols(tree, filePath)
-    : isCSharp ? extractCSharpSymbols(tree, filePath)
-    : isRuby ? extractRubySymbols(tree, filePath)
-    : isPHP ? extractPHPSymbols(tree, filePath)
-    : extractSymbols(tree, filePath);
+  return isHCL
+    ? extractHCLSymbols(tree, filePath)
+    : isPython
+      ? extractPythonSymbols(tree, filePath)
+      : isGo
+        ? extractGoSymbols(tree, filePath)
+        : isRust
+          ? extractRustSymbols(tree, filePath)
+          : isJava
+            ? extractJavaSymbols(tree, filePath)
+            : isCSharp
+              ? extractCSharpSymbols(tree, filePath)
+              : isRuby
+                ? extractRubySymbols(tree, filePath)
+                : isPHP
+                  ? extractPHPSymbols(tree, filePath)
+                  : extractSymbols(tree, filePath);
 }
 
 function nativeExtract(code, filePath) {
@@ -45,29 +65,29 @@ function nativeExtract(code, filePath) {
 function normalize(symbols) {
   if (!symbols) return symbols;
   return {
-    definitions: (symbols.definitions || []).map(d => ({
+    definitions: (symbols.definitions || []).map((d) => ({
       name: d.name,
       kind: d.kind,
       line: d.line,
       endLine: d.endLine ?? d.end_line ?? null,
     })),
-    calls: (symbols.calls || []).map(c => ({
+    calls: (symbols.calls || []).map((c) => ({
       name: c.name,
       line: c.line,
       ...(c.dynamic ? { dynamic: true } : {}),
     })),
-    imports: (symbols.imports || []).map(i => ({
+    imports: (symbols.imports || []).map((i) => ({
       source: i.source,
       names: i.names || [],
       line: i.line,
     })),
-    classes: (symbols.classes || []).map(c => ({
+    classes: (symbols.classes || []).map((c) => ({
       name: c.name,
       ...(c.extends ? { extends: c.extends } : {}),
       ...(c.implements ? { implements: c.implements } : {}),
       line: c.line,
     })),
-    exports: (symbols.exports || []).map(e => ({
+    exports: (symbols.exports || []).map((e) => ({
       name: e.name,
       kind: e.kind,
       line: e.line,

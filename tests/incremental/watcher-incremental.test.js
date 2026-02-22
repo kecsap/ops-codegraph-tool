@@ -7,10 +7,10 @@
  * Skipped when the native engine is not available.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isNativeAvailable } from '../../src/native.js';
 import { createParseTreeCache, parseFileIncremental } from '../../src/parser.js';
 
@@ -38,14 +38,17 @@ describe.skipIf(!hasNative)('Watcher incremental flow', () => {
     const result1 = await parseFileIncremental(cache, filePath, fs.readFileSync(filePath, 'utf-8'));
 
     expect(result1).not.toBeNull();
-    expect(result1.definitions.map(d => d.name)).toContain('greet');
+    expect(result1.definitions.map((d) => d.name)).toContain('greet');
 
     // Edit: add a second function
-    fs.writeFileSync(filePath, 'function greet() { return "hi"; }\nfunction farewell() { return "bye"; }');
+    fs.writeFileSync(
+      filePath,
+      'function greet() { return "hi"; }\nfunction farewell() { return "bye"; }',
+    );
     const result2 = await parseFileIncremental(cache, filePath, fs.readFileSync(filePath, 'utf-8'));
 
     expect(result2).not.toBeNull();
-    const names = result2.definitions.map(d => d.name);
+    const names = result2.definitions.map((d) => d.name);
     expect(names).toContain('greet');
     expect(names).toContain('farewell');
   });
@@ -70,6 +73,6 @@ describe.skipIf(!hasNative)('Watcher incremental flow', () => {
     // Pass null cache — should use parseFileAuto internally
     const result = await parseFileIncremental(null, filePath, fs.readFileSync(filePath, 'utf-8'));
     expect(result).not.toBeNull();
-    expect(result.definitions.map(d => d.name)).toContain('fb');
+    expect(result.definitions.map((d) => d.name)).toContain('fb');
   });
 });

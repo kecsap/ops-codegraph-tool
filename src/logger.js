@@ -1,7 +1,11 @@
 let verbose = false;
 
-export function setVerbose(v) { verbose = v; }
-export function isVerbose() { return verbose; }
+export function setVerbose(v) {
+  verbose = v;
+}
+export function isVerbose() {
+  return verbose;
+}
 
 export function warn(msg) {
   process.stderr.write(`[codegraph WARN] ${msg}\n`);

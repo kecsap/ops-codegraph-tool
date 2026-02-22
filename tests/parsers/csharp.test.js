@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createParsers, extractCSharpSymbols } from '../../src/parser.js';
 
 describe('C# parser', () => {
@@ -18,7 +18,7 @@ describe('C# parser', () => {
   it('extracts class declarations', () => {
     const symbols = parseCSharp(`public class User { }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User', kind: 'class', line: 1 })
+      expect.objectContaining({ name: 'User', kind: 'class', line: 1 }),
     );
   });
 
@@ -28,10 +28,10 @@ describe('C# parser', () => {
   private int Baz(string s) { return 0; }
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.Bar', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.Bar', kind: 'method' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.Baz', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.Baz', kind: 'method' }),
     );
   });
 
@@ -40,7 +40,7 @@ describe('C# parser', () => {
   public User(string name) {}
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User.User', kind: 'method' })
+      expect.objectContaining({ name: 'User.User', kind: 'method' }),
     );
   });
 
@@ -50,24 +50,24 @@ describe('C# parser', () => {
   string Deserialize();
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'ISerializable', kind: 'interface' })
+      expect.objectContaining({ name: 'ISerializable', kind: 'interface' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'ISerializable.Serialize', kind: 'method' })
+      expect.objectContaining({ name: 'ISerializable.Serialize', kind: 'method' }),
     );
   });
 
   it('extracts enum declarations', () => {
     const symbols = parseCSharp(`public enum Color { Red, Green, Blue }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Color', kind: 'class' })
+      expect.objectContaining({ name: 'Color', kind: 'class' }),
     );
   });
 
   it('extracts struct declarations', () => {
     const symbols = parseCSharp(`public struct Point { public int X; public int Y; }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Point', kind: 'class' })
+      expect.objectContaining({ name: 'Point', kind: 'class' }),
     );
   });
 
@@ -76,10 +76,10 @@ describe('C# parser', () => {
 using System.IO;
 public class Foo {}`);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'System.Collections.Generic', names: ['Generic'] })
+      expect.objectContaining({ source: 'System.Collections.Generic', names: ['Generic'] }),
     );
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'System.IO', names: ['IO'] })
+      expect.objectContaining({ source: 'System.IO', names: ['IO'] }),
     );
   });
 
@@ -91,24 +91,16 @@ public class Foo {}`);
     list.Add("item");
   }
 }`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'WriteLine' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'DoSomething' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'Add' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'WriteLine' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'DoSomething' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'Add' }));
   });
 
   it('extracts object creation expressions', () => {
     const symbols = parseCSharp(`public class Foo {
   void Run() { var u = new User("Alice"); }
 }`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'User' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'User' }));
   });
 
   it('extracts property declarations', () => {
@@ -116,7 +108,7 @@ public class Foo {}`);
   public string Name { get; set; }
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User.Name', kind: 'method' })
+      expect.objectContaining({ name: 'User.Name', kind: 'method' }),
     );
   });
 });

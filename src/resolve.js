@@ -1,8 +1,7 @@
-
-import fs from 'fs';
-import path from 'path';
-import { loadNative } from './native.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { normalizePath } from './constants.js';
+import { loadNative } from './native.js';
 
 // ── Alias format conversion ─────────────────────────────────────────
 
@@ -23,7 +22,7 @@ export function convertAliasesForNative(aliases) {
 
 // ── JS fallback implementations ─────────────────────────────────────
 
-function resolveViaAlias(importSource, aliases, rootDir) {
+function resolveViaAlias(importSource, aliases, _rootDir) {
   if (aliases.baseUrl && !importSource.startsWith('.') && !importSource.startsWith('/')) {
     const candidate = path.resolve(aliases.baseUrl, importSource);
     for (const ext of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
@@ -38,7 +37,16 @@ function resolveViaAlias(importSource, aliases, rootDir) {
     const rest = importSource.slice(prefix.length);
     for (const target of targets) {
       const resolved = target.replace(/\*$/, rest);
-      for (const ext of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
+      for (const ext of [
+        '',
+        '.ts',
+        '.tsx',
+        '.js',
+        '.jsx',
+        '/index.ts',
+        '/index.tsx',
+        '/index.js',
+      ]) {
         const full = resolved + ext;
         if (fs.existsSync(full)) return full;
       }
@@ -54,7 +62,7 @@ function resolveImportPathJS(fromFile, importSource, rootDir, aliases) {
   }
   if (!importSource.startsWith('.')) return importSource;
   const dir = path.dirname(fromFile);
-  let resolved = path.resolve(dir, importSource);
+  const resolved = path.resolve(dir, importSource);
 
   if (resolved.endsWith('.js')) {
     const tsCandidate = resolved.replace(/\.js$/, '.ts');
@@ -63,7 +71,18 @@ function resolveImportPathJS(fromFile, importSource, rootDir, aliases) {
     if (fs.existsSync(tsxCandidate)) return normalizePath(path.relative(rootDir, tsxCandidate));
   }
 
-  for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '/index.ts', '/index.tsx', '/index.js', '/__init__.py']) {
+  for (const ext of [
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.mjs',
+    '.py',
+    '/index.ts',
+    '/index.tsx',
+    '/index.js',
+    '/__init__.py',
+  ]) {
     const candidate = resolved + ext;
     if (fs.existsSync(candidate)) {
       return normalizePath(path.relative(rootDir, candidate));
@@ -94,7 +113,12 @@ export function resolveImportPath(fromFile, importSource, rootDir, aliases) {
   const native = loadNative();
   if (native) {
     try {
-      return native.resolveImport(fromFile, importSource, rootDir, convertAliasesForNative(aliases));
+      return native.resolveImport(
+        fromFile,
+        importSource,
+        rootDir,
+        convertAliasesForNative(aliases),
+      );
     } catch {
       // fall through to JS
     }

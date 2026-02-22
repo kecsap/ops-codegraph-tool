@@ -9,7 +9,7 @@
 import { createRequire } from 'node:module';
 import os from 'node:os';
 
-let _cached = undefined;   // undefined = not yet tried, null = failed, object = module
+let _cached; // undefined = not yet tried, null = failed, object = module
 let _loadError = null;
 
 /** Map of (platform-arch) → npm package name. */
@@ -61,7 +61,7 @@ export function getNative() {
   if (!mod) {
     throw new Error(
       `Native codegraph-core not available: ${_loadError?.message || 'unknown error'}. ` +
-      'Install the platform package or use --engine wasm.'
+        'Install the platform package or use --engine wasm.',
     );
   }
   return mod;

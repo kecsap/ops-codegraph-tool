@@ -4,7 +4,7 @@
  * Skipped when the native engine is not available.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { isNativeAvailable, loadNative } from '../../src/native.js';
 
 const hasNative = isNativeAvailable();
@@ -36,7 +36,7 @@ describe.skipIf(!hasNative)('ParseTreeCache', () => {
     const result = cache.parseFile('test.js', source2);
 
     expect(result).not.toBeNull();
-    const names = result.definitions.map(d => d.name);
+    const names = result.definitions.map((d) => d.name);
     expect(names).toContain('hello');
     expect(names).toContain('world');
     expect(cache.size()).toBe(1);

@@ -1,15 +1,15 @@
-import { vi, describe, test, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import Database from 'better-sqlite3';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { initSchema } from '../../src/db.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 
 // ─── Mock setup ────────────────────────────────────────────────────────
 
 // Hoisted so the mock factory can reference it
 const { QUERY_VECTORS } = vi.hoisted(() => ({
-  QUERY_VECTORS: new Map()
+  QUERY_VECTORS: new Map(),
 }));
 
 // Mock @huggingface/transformers so embed() returns controlled vectors
@@ -28,10 +28,10 @@ vi.mock('@huggingface/transformers', () => ({
     }
     return { data };
   },
-  cos_sim: () => 0
+  cos_sim: () => 0,
 }));
 
-import { cosineSim, searchData, multiSearchData, search } from '../../src/embedder.js';
+import { cosineSim, multiSearchData, search, searchData } from '../../src/embedder.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -43,15 +43,17 @@ function makeVec(components) {
 }
 
 function insertNode(db, name, kind, file, line) {
-  return db.prepare(
-    'INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)'
-  ).run(name, kind, file, line).lastInsertRowid;
+  return db
+    .prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)')
+    .run(name, kind, file, line).lastInsertRowid;
 }
 
 function insertEmbedding(db, nodeId, vec, preview) {
-  db.prepare(
-    'INSERT INTO embeddings (node_id, vector, text_preview) VALUES (?, ?, ?)'
-  ).run(nodeId, Buffer.from(vec.buffer), preview);
+  db.prepare('INSERT INTO embeddings (node_id, vector, text_preview) VALUES (?, ?, ?)').run(
+    nodeId,
+    Buffer.from(vec.buffer),
+    preview,
+  );
 }
 
 // ─── Fixture DB ────────────────────────────────────────────────────────
@@ -100,7 +102,9 @@ beforeAll(() => {
   insertEmbedding(db, idC, makeVec([S, S, 0]), 'authMiddleware (function) -- src/middleware.js:5');
   insertEmbedding(db, idD, makeVec([0, 0, 1]), 'formatDate (function) -- src/utils.js:1');
 
-  db.prepare("INSERT INTO embedding_meta (key, value) VALUES ('model', 'Xenova/all-MiniLM-L6-v2')").run();
+  db.prepare(
+    "INSERT INTO embedding_meta (key, value) VALUES ('model', 'Xenova/all-MiniLM-L6-v2')",
+  ).run();
   db.prepare("INSERT INTO embedding_meta (key, value) VALUES ('dim', '384')").run();
   db.prepare("INSERT INTO embedding_meta (key, value) VALUES ('count', '4')").run();
   db.close();
@@ -108,7 +112,7 @@ beforeAll(() => {
   // Query vectors used by the mocked embed()
   QUERY_VECTORS.set('auth', makeVec([1, 0, 0]));
   QUERY_VECTORS.set('jwt', makeVec([0, 1, 0]));
-  QUERY_VECTORS.set('authenticate', makeVec([0.99, 0.1, 0]));  // very similar to 'auth'
+  QUERY_VECTORS.set('authenticate', makeVec([0.99, 0.1, 0])); // very similar to 'auth'
 });
 
 afterAll(() => {
@@ -178,7 +182,7 @@ describe('multiSearchData', () => {
 
   test('returns per-query scores for each result', async () => {
     const data = await multiSearchData(['auth', 'jwt'], dbPath, { minScore: 0.2 });
-    const mw = data.results.find(r => r.name === 'authMiddleware');
+    const mw = data.results.find((r) => r.name === 'authMiddleware');
     expect(mw.queryScores).toHaveLength(2);
     for (const qs of mw.queryScores) {
       expect(qs).toHaveProperty('query');
@@ -201,7 +205,7 @@ describe('multiSearchData', () => {
   test('warns when queries are too similar', async () => {
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => {});
     await multiSearchData(['auth', 'authenticate'], dbPath, { minScore: 0.2 });
-    const output = spy.mock.calls.map(c => c[0]).join('');
+    const output = spy.mock.calls.map((c) => c[0]).join('');
     expect(output).toContain('very similar');
     expect(output).toContain('bias RRF');
     spy.mockRestore();
@@ -210,7 +214,7 @@ describe('multiSearchData', () => {
   test('does not warn when queries are distinct', async () => {
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => {});
     await multiSearchData(['auth', 'jwt'], dbPath, { minScore: 0.2 });
-    const output = spy.mock.calls.map(c => c[0]).join('');
+    const output = spy.mock.calls.map((c) => c[0]).join('');
     expect(output).not.toContain('very similar');
     spy.mockRestore();
   });
@@ -220,8 +224,13 @@ describe('search (CLI wrapper)', () => {
   /** Capture console.log calls and return joined output. */
   function captureLog(fn) {
     const lines = [];
-    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => lines.push(args.join(' ')));
-    return fn().then(() => { spy.mockRestore(); return lines.join('\n'); });
+    const spy = vi
+      .spyOn(console, 'log')
+      .mockImplementation((...args) => lines.push(args.join(' ')));
+    return fn().then(() => {
+      spy.mockRestore();
+      return lines.join('\n');
+    });
   }
 
   test('single query prints similarity format', async () => {

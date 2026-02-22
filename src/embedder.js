@@ -1,63 +1,70 @@
-import fs from "fs";
-import path from "path";
-
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { findDbPath, openReadonlyOrFail } from './db.js';
-import { warn, debug } from './logger.js';
+import { warn } from './logger.js';
 
 // Lazy-load transformers (heavy, optional module)
 let pipeline = null;
-let cos_sim = null;
+let _cos_sim = null;
 let extractor = null;
 let activeModel = null;
 
 export const MODELS = {
-  'minilm': {
+  minilm: {
     name: 'Xenova/all-MiniLM-L6-v2',
     dim: 384,
     desc: 'Smallest, fastest (~23MB). General text.',
-    quantized: true
+    quantized: true,
   },
   'jina-small': {
     name: 'Xenova/jina-embeddings-v2-small-en',
     dim: 512,
     desc: 'Small, good quality (~33MB). General text.',
-    quantized: false
+    quantized: false,
   },
   'jina-base': {
     name: 'Xenova/jina-embeddings-v2-base-en',
     dim: 768,
     desc: 'Good quality (~137MB). General text, 8192 token context.',
-    quantized: false
+    quantized: false,
   },
   'jina-code': {
     name: 'Xenova/jina-embeddings-v2-base-code',
     dim: 768,
     desc: 'Code-aware (~137MB). Trained on code+text, best for code search.',
-    quantized: false
+    quantized: false,
   },
-  'nomic': {
+  nomic: {
     name: 'Xenova/nomic-embed-text-v1',
     dim: 768,
     desc: 'Good local quality (~137MB). 8192 context.',
-    quantized: false
+    quantized: false,
   },
   'nomic-v1.5': {
     name: 'nomic-ai/nomic-embed-text-v1.5',
     dim: 768,
     desc: 'Improved nomic (~137MB). Matryoshka dimensions, 8192 context.',
-    quantized: false
+    quantized: false,
   },
   'bge-large': {
     name: 'Xenova/bge-large-en-v1.5',
     dim: 1024,
     desc: 'Best general retrieval (~335MB). Top MTEB scores.',
-    quantized: false
-  }
+    quantized: false,
+  },
 };
 
 export const DEFAULT_MODEL = 'minilm';
-const BATCH_SIZE_MAP = { 'minilm': 32, 'jina-small': 16, 'jina-base': 8, 'jina-code': 8, 'nomic': 8, 'nomic-v1.5': 8, 'bge-large': 4 };
+const BATCH_SIZE_MAP = {
+  minilm: 32,
+  'jina-small': 16,
+  'jina-base': 8,
+  'jina-code': 8,
+  nomic: 8,
+  'nomic-v1.5': 8,
+  'bge-large': 4,
+};
 const DEFAULT_BATCH_SIZE = 32;
 
 function getModelConfig(modelKey) {
@@ -80,7 +87,7 @@ async function loadTransformers() {
   } catch {
     console.error(
       'Semantic search requires @huggingface/transformers.\n' +
-      'Install it with: npm install @huggingface/transformers'
+        'Install it with: npm install @huggingface/transformers',
     );
     process.exit(1);
   }
@@ -93,7 +100,7 @@ async function loadModel(modelKey) {
 
   const transformers = await loadTransformers();
   pipeline = transformers.pipeline;
-  cos_sim = transformers.cos_sim;
+  _cos_sim = transformers.cos_sim;
 
   console.log(`Loading embedding model: ${config.name} (${config.dim}d)...`);
   const opts = config.quantized ? { quantized: true } : {};
@@ -137,7 +144,9 @@ export async function embed(texts, modelKey) {
  * Cosine similarity between two Float32Arrays.
  */
 export function cosineSim(a, b) {
-  let dot = 0, normA = 0, normB = 0;
+  let dot = 0,
+    normA = 0,
+    normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
@@ -175,9 +184,11 @@ export async function buildEmbeddings(rootDir, modelKey) {
   db.exec('DELETE FROM embeddings');
   db.exec('DELETE FROM embedding_meta');
 
-  const nodes = db.prepare(
-    `SELECT * FROM nodes WHERE kind IN ('function', 'method', 'class') ORDER BY file, line`
-  ).all();
+  const nodes = db
+    .prepare(
+      `SELECT * FROM nodes WHERE kind IN ('function', 'method', 'class') ORDER BY file, line`,
+    )
+    .all();
 
   console.log(`Building embeddings for ${nodes.length} symbols...`);
 
@@ -218,7 +229,9 @@ export async function buildEmbeddings(rootDir, modelKey) {
   console.log(`Embedding ${texts.length} symbols...`);
   const { vectors, dim } = await embed(texts, modelKey);
 
-  const insert = db.prepare('INSERT OR REPLACE INTO embeddings (node_id, vector, text_preview) VALUES (?, ?, ?)');
+  const insert = db.prepare(
+    'INSERT OR REPLACE INTO embeddings (node_id, vector, text_preview) VALUES (?, ?, ?)',
+  );
   const insertMeta = db.prepare('INSERT OR REPLACE INTO embedding_meta (key, value) VALUES (?, ?)');
   const insertAll = db.transaction(() => {
     for (let i = 0; i < vectors.length; i++) {
@@ -232,7 +245,9 @@ export async function buildEmbeddings(rootDir, modelKey) {
   });
   insertAll();
 
-  console.log(`\nStored ${vectors.length} embeddings (${dim}d, ${getModelConfig(modelKey).name}) in graph.db`);
+  console.log(
+    `\nStored ${vectors.length} embeddings (${dim}d, ${getModelConfig(modelKey).name}) in graph.db`,
+  );
   db.close();
 }
 
@@ -245,7 +260,7 @@ function _prepareSearch(customDbPath, opts = {}) {
 
   let count;
   try {
-    count = db.prepare("SELECT COUNT(*) as c FROM embeddings").get().c;
+    count = db.prepare('SELECT COUNT(*) as c FROM embeddings').get().c;
   } catch {
     console.log('No embeddings table found. Run `codegraph embed` first.');
     db.close();
@@ -263,13 +278,18 @@ function _prepareSearch(customDbPath, opts = {}) {
     const modelRow = db.prepare("SELECT value FROM embedding_meta WHERE key = 'model'").get();
     const dimRow = db.prepare("SELECT value FROM embedding_meta WHERE key = 'dim'").get();
     if (modelRow) storedModel = modelRow.value;
-    if (dimRow) storedDim = parseInt(dimRow.value);
-  } catch { /* old DB without meta table */ }
+    if (dimRow) storedDim = parseInt(dimRow.value, 10);
+  } catch {
+    /* old DB without meta table */
+  }
 
   let modelKey = opts.model || null;
   if (!modelKey && storedModel) {
     for (const [key, config] of Object.entries(MODELS)) {
-      if (config.name === storedModel) { modelKey = key; break; }
+      if (config.name === storedModel) {
+        modelKey = key;
+        break;
+      }
     }
   }
 
@@ -292,12 +312,12 @@ function _prepareSearch(customDbPath, opts = {}) {
     params.push(`%${opts.filePattern}%`);
   }
   if (conditions.length > 0) {
-    sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ` WHERE ${conditions.join(' AND ')}`;
   }
 
   let rows = db.prepare(sql).all(...params);
   if (noTests) {
-    rows = rows.filter(row => !TEST_PATTERN.test(row.file));
+    rows = rows.filter((row) => !TEST_PATTERN.test(row.file));
   }
 
   return { db, rows, modelKey, storedDim };
@@ -315,10 +335,15 @@ export async function searchData(query, customDbPath, opts = {}) {
   if (!prepared) return null;
   const { db, rows, modelKey, storedDim } = prepared;
 
-  const { vectors: [queryVec], dim } = await embed([query], modelKey);
+  const {
+    vectors: [queryVec],
+    dim,
+  } = await embed([query], modelKey);
 
   if (storedDim && dim !== storedDim) {
-    console.log(`Warning: query model dimension (${dim}) doesn't match stored embeddings (${storedDim}).`);
+    console.log(
+      `Warning: query model dimension (${dim}) doesn't match stored embeddings (${storedDim}).`,
+    );
     console.log(`  Re-run \`codegraph embed\` with the same model, or use --model to match.`);
     db.close();
     return null;
@@ -335,7 +360,7 @@ export async function searchData(query, customDbPath, opts = {}) {
         kind: row.kind,
         file: row.file,
         line: row.line,
-        similarity: sim
+        similarity: sim,
       });
     }
   }
@@ -368,26 +393,28 @@ export async function multiSearchData(queries, customDbPath, opts = {}) {
       if (sim >= SIMILARITY_WARN_THRESHOLD) {
         warn(
           `Queries "${queries[i]}" and "${queries[j]}" are very similar ` +
-          `(${(sim * 100).toFixed(0)}% cosine similarity). ` +
-          `This may bias RRF results toward their shared matches. ` +
-          `Consider using more distinct queries.`
+            `(${(sim * 100).toFixed(0)}% cosine similarity). ` +
+            `This may bias RRF results toward their shared matches. ` +
+            `Consider using more distinct queries.`,
         );
       }
     }
   }
 
   if (storedDim && dim !== storedDim) {
-    console.log(`Warning: query model dimension (${dim}) doesn't match stored embeddings (${storedDim}).`);
+    console.log(
+      `Warning: query model dimension (${dim}) doesn't match stored embeddings (${storedDim}).`,
+    );
     console.log(`  Re-run \`codegraph embed\` with the same model, or use --model to match.`);
     db.close();
     return null;
   }
 
   // Parse row vectors once
-  const rowVecs = rows.map(row => new Float32Array(new Uint8Array(row.vector).buffer));
+  const rowVecs = rows.map((row) => new Float32Array(new Uint8Array(row.vector).buffer));
 
   // For each query: compute similarities, filter by minScore, rank
-  const perQueryRanked = queries.map((query, qi) => {
+  const perQueryRanked = queries.map((_query, qi) => {
     const scored = [];
     for (let ri = 0; ri < rows.length; ri++) {
       const sim = cosineSim(queryVecs[qi], rowVecs[ri]);
@@ -412,7 +439,7 @@ export async function multiSearchData(queries, customDbPath, opts = {}) {
       entry.queryScores.push({
         query: queries[qi],
         similarity: item.similarity,
-        rank: item.rank
+        rank: item.rank,
       });
     }
   }
@@ -427,7 +454,7 @@ export async function multiSearchData(queries, customDbPath, opts = {}) {
       file: row.file,
       line: row.line,
       rrf: entry.rrfScore,
-      queryScores: entry.queryScores
+      queryScores: entry.queryScores,
     });
   }
 
@@ -441,7 +468,10 @@ export async function multiSearchData(queries, customDbPath, opts = {}) {
  */
 export async function search(query, customDbPath, opts = {}) {
   // Split by semicolons, trim, filter empties
-  const queries = query.split(';').map(q => q.trim()).filter(q => q.length > 0);
+  const queries = query
+    .split(';')
+    .map((q) => q.trim())
+    .filter((q) => q.length > 0);
 
   if (queries.length <= 1) {
     // Single-query path — preserve original output format
@@ -469,7 +499,9 @@ export async function search(query, customDbPath, opts = {}) {
     if (!data) return;
 
     console.log(`\nMulti-query semantic search (RRF, k=${opts.rrfK || 60}):`);
-    queries.forEach((q, i) => console.log(`  [${i + 1}] "${q}"`));
+    queries.forEach((q, i) => {
+      console.log(`  [${i + 1}] "${q}"`);
+    });
     console.log();
 
     if (data.results.length === 0) {
@@ -480,7 +512,9 @@ export async function search(query, customDbPath, opts = {}) {
         console.log(`  RRF ${r.rrf.toFixed(4)}  ${kindIcon} ${r.name} -- ${r.file}:${r.line}`);
         for (const qs of r.queryScores) {
           const bar = '#'.repeat(Math.round(qs.similarity * 20));
-          console.log(`    [${queries.indexOf(qs.query) + 1}] ${(qs.similarity * 100).toFixed(1)}% ${bar} (rank ${qs.rank})`);
+          console.log(
+            `    [${queries.indexOf(qs.query) + 1}] ${(qs.similarity * 100).toFixed(1)}% ${bar} (rank ${qs.rank})`,
+          );
         }
       }
     }
@@ -488,4 +522,3 @@ export async function search(query, customDbPath, opts = {}) {
     console.log(`\n  ${data.results.length} results shown\n`);
   }
 }
-

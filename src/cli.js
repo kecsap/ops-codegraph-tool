@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 import { Command } from 'commander';
 import { buildGraph } from './builder.js';
-import { queryName, impactAnalysis, moduleMap, fileDeps, fnDeps, fnImpact, diffImpact } from './queries.js';
-import { buildEmbeddings, search, MODELS } from './embedder.js';
-import { watchProject } from './watcher.js';
-import { exportDOT, exportMermaid, exportJSON } from './export.js';
 import { findCycles, formatCycles } from './cycles.js';
 import { findDbPath } from './db.js';
+import { buildEmbeddings, MODELS, search } from './embedder.js';
+import { exportDOT, exportJSON, exportMermaid } from './export.js';
 import { setVerbose } from './logger.js';
-import path from 'path';
-import Database from 'better-sqlite3';
-import fs from 'fs';
+import {
+  diffImpact,
+  fileDeps,
+  fnDeps,
+  fnImpact,
+  impactAnalysis,
+  moduleMap,
+  queryName,
+} from './queries.js';
+import { watchProject } from './watcher.js';
 
 const program = new Command();
 program
@@ -60,7 +68,7 @@ program
   .option('-n, --limit <number>', 'Number of top nodes', '20')
   .option('-j, --json', 'Output as JSON')
   .action((opts) => {
-    moduleMap(opts.db, parseInt(opts.limit), { json: opts.json });
+    moduleMap(opts.db, parseInt(opts.limit, 10), { json: opts.json });
   });
 
 program
@@ -80,7 +88,11 @@ program
   .option('-T, --no-tests', 'Exclude test/spec files from results')
   .option('-j, --json', 'Output as JSON')
   .action((name, opts) => {
-    fnDeps(name, opts.db, { depth: parseInt(opts.depth), noTests: !opts.tests, json: opts.json });
+    fnDeps(name, opts.db, {
+      depth: parseInt(opts.depth, 10),
+      noTests: !opts.tests,
+      json: opts.json,
+    });
   });
 
 program
@@ -91,7 +103,11 @@ program
   .option('-T, --no-tests', 'Exclude test/spec files from results')
   .option('-j, --json', 'Output as JSON')
   .action((name, opts) => {
-    fnImpact(name, opts.db, { depth: parseInt(opts.depth), noTests: !opts.tests, json: opts.json });
+    fnImpact(name, opts.db, {
+      depth: parseInt(opts.depth, 10),
+      noTests: !opts.tests,
+      json: opts.json,
+    });
   });
 
 program
@@ -103,7 +119,13 @@ program
   .option('-T, --no-tests', 'Exclude test/spec files from results')
   .option('-j, --json', 'Output as JSON')
   .action((ref, opts) => {
-    diffImpact(opts.db, { ref, staged: opts.staged, depth: parseInt(opts.depth), noTests: !opts.tests, json: opts.json });
+    diffImpact(opts.db, {
+      ref,
+      staged: opts.staged,
+      depth: parseInt(opts.depth, 10),
+      noTests: !opts.tests,
+      json: opts.json,
+    });
   });
 
 // ─── New commands ────────────────────────────────────────────────────────
@@ -127,7 +149,6 @@ program
       case 'json':
         output = JSON.stringify(exportJSON(db), null, 2);
         break;
-      case 'dot':
       default:
         output = exportDOT(db, exportOpts);
         break;
@@ -187,8 +208,14 @@ program
 
 program
   .command('embed [dir]')
-  .description('Build semantic embeddings for all functions/methods/classes (requires prior `build`)')
-  .option('-m, --model <name>', 'Embedding model: minilm (default), jina-small, jina-base, jina-code, nomic, nomic-v1.5, bge-large. Run `codegraph models` for details', 'minilm')
+  .description(
+    'Build semantic embeddings for all functions/methods/classes (requires prior `build`)',
+  )
+  .option(
+    '-m, --model <name>',
+    'Embedding model: minilm (default), jina-small, jina-base, jina-code, nomic, nomic-v1.5, bge-large. Run `codegraph models` for details',
+    'minilm',
+  )
   .action(async (dir, opts) => {
     const root = path.resolve(dir || '.');
     await buildEmbeddings(root, opts.model);
@@ -207,13 +234,13 @@ program
   .option('--rrf-k <number>', 'RRF k parameter for multi-query ranking', '60')
   .action(async (query, opts) => {
     await search(query, opts.db, {
-      limit: parseInt(opts.limit),
+      limit: parseInt(opts.limit, 10),
       noTests: !opts.tests,
       minScore: parseFloat(opts.minScore),
       model: opts.model,
       kind: opts.kind,
       filePattern: opts.file,
-      rrfK: parseInt(opts.rrfK)
+      rrfK: parseInt(opts.rrfK, 10),
     });
   });
 
@@ -245,7 +272,8 @@ program
     console.log(`  Native engine : ${nativeAvailable ? 'available' : 'unavailable'}`);
     if (nativeAvailable) {
       const native = loadNative();
-      const nativeVersion = typeof native.engineVersion === 'function' ? native.engineVersion() : 'unknown';
+      const nativeVersion =
+        typeof native.engineVersion === 'function' ? native.engineVersion() : 'unknown';
       console.log(`  Native version: ${nativeVersion}`);
     }
     console.log(`  Engine flag   : --engine ${engine}`);

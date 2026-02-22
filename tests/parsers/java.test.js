@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createParsers, extractJavaSymbols } from '../../src/parser.js';
 
 describe('Java parser', () => {
@@ -18,7 +18,7 @@ describe('Java parser', () => {
   it('extracts class declarations', () => {
     const symbols = parseJava(`public class User { }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User', kind: 'class', line: 1 })
+      expect.objectContaining({ name: 'User', kind: 'class', line: 1 }),
     );
   });
 
@@ -28,10 +28,10 @@ describe('Java parser', () => {
   private int baz(String s) { return 0; }
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.bar', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.bar', kind: 'method' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.baz', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.baz', kind: 'method' }),
     );
   });
 
@@ -40,7 +40,7 @@ describe('Java parser', () => {
   public User(String name) {}
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User.User', kind: 'method' })
+      expect.objectContaining({ name: 'User.User', kind: 'method' }),
     );
   });
 
@@ -50,31 +50,31 @@ describe('Java parser', () => {
   String deserialize();
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Serializable', kind: 'interface' })
+      expect.objectContaining({ name: 'Serializable', kind: 'interface' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Serializable.serialize', kind: 'method' })
+      expect.objectContaining({ name: 'Serializable.serialize', kind: 'method' }),
     );
   });
 
   it('extracts enum declarations', () => {
     const symbols = parseJava(`public enum Color { RED, GREEN, BLUE }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Color', kind: 'class' })
+      expect.objectContaining({ name: 'Color', kind: 'class' }),
     );
   });
 
   it('extracts extends relationship', () => {
     const symbols = parseJava(`public class Admin extends User { }`);
     expect(symbols.classes).toContainEqual(
-      expect.objectContaining({ name: 'Admin', extends: 'User' })
+      expect.objectContaining({ name: 'Admin', extends: 'User' }),
     );
   });
 
   it('extracts implements relationship', () => {
     const symbols = parseJava(`public class UserService implements Serializable { }`);
     expect(symbols.classes).toContainEqual(
-      expect.objectContaining({ name: 'UserService', implements: 'Serializable' })
+      expect.objectContaining({ name: 'UserService', implements: 'Serializable' }),
     );
   });
 
@@ -83,10 +83,10 @@ describe('Java parser', () => {
 import java.io.IOException;
 public class Foo {}`);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'java.util.List', names: ['List'] })
+      expect.objectContaining({ source: 'java.util.List', names: ['List'] }),
     );
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'java.io.IOException', names: ['IOException'] })
+      expect.objectContaining({ source: 'java.io.IOException', names: ['IOException'] }),
     );
   });
 
@@ -98,23 +98,15 @@ public class Foo {}`);
     list.add("item");
   }
 }`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'println' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'doSomething' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'add' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'println' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'doSomething' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'add' }));
   });
 
   it('extracts object creation expressions', () => {
     const symbols = parseJava(`public class Foo {
   void run() { User u = new User("Alice"); }
 }`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'User' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'User' }));
   });
 });

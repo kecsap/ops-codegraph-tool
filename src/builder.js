@@ -1,20 +1,20 @@
-
-import fs from 'fs';
-import path from 'path';
-import { createHash } from 'crypto';
-import { openDb, initSchema } from './db.js';
-import { parseFilesAuto, getActiveEngine } from './parser.js';
-import { IGNORE_DIRS, EXTENSIONS, normalizePath } from './constants.js';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadConfig } from './config.js';
-import { warn, debug, info } from './logger.js';
-import { resolveImportPath, computeConfidence, resolveImportsBatch } from './resolve.js';
+import { EXTENSIONS, IGNORE_DIRS, normalizePath } from './constants.js';
+import { initSchema, openDb } from './db.js';
+import { warn } from './logger.js';
+import { getActiveEngine, parseFilesAuto } from './parser.js';
+import { computeConfidence, resolveImportPath, resolveImportsBatch } from './resolve.js';
 
 export { resolveImportPath } from './resolve.js';
 
 export function collectFiles(dir, files = [], config = {}) {
   let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-  catch (err) {
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
     warn(`Cannot read directory ${dir}: ${err.message}`);
     return files;
   }
@@ -28,7 +28,7 @@ export function collectFiles(dir, files = [], config = {}) {
       if (entry.isDirectory()) continue;
     }
     if (IGNORE_DIRS.has(entry.name)) continue;
-    if (extraIgnore && extraIgnore.has(entry.name)) continue;
+    if (extraIgnore?.has(entry.name)) continue;
 
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -46,7 +46,8 @@ export function loadPathAliases(rootDir) {
     const configPath = path.join(rootDir, configName);
     if (!fs.existsSync(configPath)) continue;
     try {
-      const raw = fs.readFileSync(configPath, 'utf-8')
+      const raw = fs
+        .readFileSync(configPath, 'utf-8')
         .replace(/\/\/.*$/gm, '')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/,\s*([\]}])/g, '$1');
@@ -55,7 +56,7 @@ export function loadPathAliases(rootDir) {
       if (opts.baseUrl) aliases.baseUrl = path.resolve(rootDir, opts.baseUrl);
       if (opts.paths) {
         for (const [pattern, targets] of Object.entries(opts.paths)) {
-          aliases.paths[pattern] = targets.map(t => path.resolve(aliases.baseUrl || rootDir, t));
+          aliases.paths[pattern] = targets.map((t) => path.resolve(aliases.baseUrl || rootDir, t));
         }
       }
       break;
@@ -82,20 +83,24 @@ function getChangedFiles(db, allFiles, rootDir) {
   try {
     db.prepare('SELECT 1 FROM file_hashes LIMIT 1').get();
     hasTable = true;
-  } catch { /* table doesn't exist */ }
+  } catch {
+    /* table doesn't exist */
+  }
 
   if (!hasTable) {
     // No hash table = first build, everything is new
     return {
-      changed: allFiles.map(f => ({ file: f })),
+      changed: allFiles.map((f) => ({ file: f })),
       removed: [],
-      isFullBuild: true
+      isFullBuild: true,
     };
   }
 
   const existing = new Map(
-    db.prepare('SELECT file, hash FROM file_hashes').all()
-      .map(r => [r.file, r.hash])
+    db
+      .prepare('SELECT file, hash FROM file_hashes')
+      .all()
+      .map((r) => [r.file, r.hash]),
   );
 
   const changed = [];
@@ -106,7 +111,11 @@ function getChangedFiles(db, allFiles, rootDir) {
     currentFiles.add(relPath);
 
     let content;
-    try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
+    try {
+      content = fs.readFileSync(file, 'utf-8');
+    } catch {
+      continue;
+    }
     const hash = fileHash(content);
 
     if (existing.get(relPath) !== hash) {
@@ -130,7 +139,8 @@ export async function buildGraph(rootDir, opts = {}) {
   initSchema(db);
 
   const config = loadConfig(rootDir);
-  const incremental = opts.incremental !== false && config.build && config.build.incremental !== false;
+  const incremental =
+    opts.incremental !== false && config.build && config.build.incremental !== false;
 
   // Engine selection: 'native', 'wasm', or 'auto' (default)
   const engineOpts = { engine: opts.engine || 'auto' };
@@ -141,14 +151,16 @@ export async function buildGraph(rootDir, opts = {}) {
   // Merge config aliases
   if (config.aliases) {
     for (const [key, value] of Object.entries(config.aliases)) {
-      const pattern = key.endsWith('/') ? key + '*' : key;
+      const pattern = key.endsWith('/') ? `${key}*` : key;
       const target = path.resolve(rootDir, value);
-      aliases.paths[pattern] = [target.endsWith('/') ? target + '*' : target + '/*'];
+      aliases.paths[pattern] = [target.endsWith('/') ? `${target}*` : `${target}/*`];
     }
   }
 
   if (aliases.baseUrl || Object.keys(aliases.paths).length > 0) {
-    console.log(`Loaded path aliases: baseUrl=${aliases.baseUrl || 'none'}, ${Object.keys(aliases.paths).length} path mappings`);
+    console.log(
+      `Loaded path aliases: baseUrl=${aliases.baseUrl || 'none'}, ${Object.keys(aliases.paths).length} path mappings`,
+    );
   }
 
   const files = collectFiles(rootDir, [], config);
@@ -157,7 +169,7 @@ export async function buildGraph(rootDir, opts = {}) {
   // Check for incremental build
   const { changed, removed, isFullBuild } = incremental
     ? getChangedFiles(db, files, rootDir)
-    : { changed: files.map(f => ({ file: f })), removed: [], isFullBuild: true };
+    : { changed: files.map((f) => ({ file: f })), removed: [], isFullBuild: true };
 
   if (!isFullBuild && changed.length === 0 && removed.length === 0) {
     console.log('No changes detected. Graph is up to date.');
@@ -166,7 +178,9 @@ export async function buildGraph(rootDir, opts = {}) {
   }
 
   if (isFullBuild) {
-    db.exec('PRAGMA foreign_keys = OFF; DELETE FROM edges; DELETE FROM nodes; PRAGMA foreign_keys = ON;');
+    db.exec(
+      'PRAGMA foreign_keys = OFF; DELETE FROM edges; DELETE FROM nodes; PRAGMA foreign_keys = ON;',
+    );
   } else {
     console.log(`Incremental: ${changed.length} changed, ${removed.length} removed`);
     // Remove nodes/edges for changed and removed files
@@ -186,15 +200,25 @@ export async function buildGraph(rootDir, opts = {}) {
     }
   }
 
-  const insertNode = db.prepare('INSERT OR IGNORE INTO nodes (name, kind, file, line, end_line) VALUES (?, ?, ?, ?, ?)');
-  const getNodeId = db.prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ? AND line = ?');
-  const insertEdge = db.prepare('INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, ?, ?)');
+  const insertNode = db.prepare(
+    'INSERT OR IGNORE INTO nodes (name, kind, file, line, end_line) VALUES (?, ?, ?, ?, ?)',
+  );
+  const getNodeId = db.prepare(
+    'SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ? AND line = ?',
+  );
+  const insertEdge = db.prepare(
+    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, ?, ?)',
+  );
 
   // Prepare hash upsert
   let upsertHash;
   try {
-    upsertHash = db.prepare('INSERT OR REPLACE INTO file_hashes (file, hash, mtime) VALUES (?, ?, ?)');
-  } catch { upsertHash = null; }
+    upsertHash = db.prepare(
+      'INSERT OR REPLACE INTO file_hashes (file, hash, mtime) VALUES (?, ?, ?)',
+    );
+  } catch {
+    upsertHash = null;
+  }
 
   // First pass: parse files and insert nodes
   const fileSymbols = new Map();
@@ -202,16 +226,16 @@ export async function buildGraph(rootDir, opts = {}) {
   // For incremental builds, also load existing symbols that aren't changing
   if (!isFullBuild) {
     // We need to reload ALL file symbols for edge building
-    const allExistingFiles = db.prepare("SELECT DISTINCT file FROM nodes WHERE kind = 'file'").all();
+    const _allExistingFiles = db
+      .prepare("SELECT DISTINCT file FROM nodes WHERE kind = 'file'")
+      .all();
     // We'll fill these in during the parse pass + edge pass
   }
 
-  const filesToParse = isFullBuild
-    ? files.map(f => ({ file: f }))
-    : changed;
+  const filesToParse = isFullBuild ? files.map((f) => ({ file: f })) : changed;
 
   // ── Unified parse via parseFilesAuto ───────────────────────────────
-  const filePaths = filesToParse.map(item => item.file);
+  const filePaths = filesToParse.map((item) => item.file);
   const allSymbols = await parseFilesAuto(filePaths, rootDir, engineOpts);
 
   // Build a hash lookup from incremental data (changed items may carry pre-computed hashes)
@@ -242,7 +266,11 @@ export async function buildGraph(rootDir, opts = {}) {
         } else {
           const absPath = path.join(rootDir, relPath);
           let code;
-          try { code = fs.readFileSync(absPath, 'utf-8'); } catch { code = null; }
+          try {
+            code = fs.readFileSync(absPath, 'utf-8');
+          } catch {
+            code = null;
+          }
           if (code !== null) {
             upsertHash.run(relPath, fileHash(code), Date.now());
           }
@@ -287,20 +315,23 @@ export async function buildGraph(rootDir, opts = {}) {
   // Build re-export map for barrel resolution
   const reexportMap = new Map();
   for (const [relPath, symbols] of fileSymbols) {
-    const reexports = symbols.imports.filter(imp => imp.reexport);
+    const reexports = symbols.imports.filter((imp) => imp.reexport);
     if (reexports.length > 0) {
-      reexportMap.set(relPath, reexports.map(imp => ({
-        source: getResolved(path.join(rootDir, relPath), imp.source),
-        names: imp.names,
-        wildcardReexport: imp.wildcardReexport || false
-      })));
+      reexportMap.set(
+        relPath,
+        reexports.map((imp) => ({
+          source: getResolved(path.join(rootDir, relPath), imp.source),
+          names: imp.names,
+          wildcardReexport: imp.wildcardReexport || false,
+        })),
+      );
     }
   }
 
   function isBarrelFile(relPath) {
     const symbols = fileSymbols.get(relPath);
     if (!symbols) return false;
-    const reexports = symbols.imports.filter(imp => imp.reexport);
+    const reexports = symbols.imports.filter((imp) => imp.reexport);
     if (reexports.length === 0) return false;
     const ownDefs = symbols.definitions.length;
     return reexports.length >= ownDefs;
@@ -317,7 +348,7 @@ export async function buildGraph(rootDir, opts = {}) {
         if (re.names.includes(symbolName)) {
           const targetSymbols = fileSymbols.get(re.source);
           if (targetSymbols) {
-            const hasDef = targetSymbols.definitions.some(d => d.name === symbolName);
+            const hasDef = targetSymbols.definitions.some((d) => d.name === symbolName);
             if (hasDef) return re.source;
             const deeper = resolveBarrelExport(re.source, symbolName, visited);
             if (deeper) return deeper;
@@ -329,7 +360,7 @@ export async function buildGraph(rootDir, opts = {}) {
       if (re.wildcardReexport || re.names.length === 0) {
         const targetSymbols = fileSymbols.get(re.source);
         if (targetSymbols) {
-          const hasDef = targetSymbols.definitions.some(d => d.name === symbolName);
+          const hasDef = targetSymbols.definitions.some((d) => d.name === symbolName);
           if (hasDef) return re.source;
           const deeper = resolveBarrelExport(re.source, symbolName, visited);
           if (deeper) return deeper;
@@ -340,9 +371,11 @@ export async function buildGraph(rootDir, opts = {}) {
   }
 
   // N+1 optimization: pre-load all nodes into a lookup map for edge building
-  const allNodes = db.prepare(
-    `SELECT id, name, kind, file FROM nodes WHERE kind IN ('function','method','class','interface')`
-  ).all();
+  const allNodes = db
+    .prepare(
+      `SELECT id, name, kind, file FROM nodes WHERE kind IN ('function','method','class','interface')`,
+    )
+    .all();
   const nodesByName = new Map();
   for (const node of allNodes) {
     if (!nodesByName.has(node.name)) nodesByName.set(node.name, []);
@@ -377,11 +410,21 @@ export async function buildGraph(rootDir, opts = {}) {
             for (const name of imp.names) {
               const cleanName = name.replace(/^\*\s+as\s+/, '');
               const actualSource = resolveBarrelExport(resolvedPath, cleanName);
-              if (actualSource && actualSource !== resolvedPath && !resolvedSources.has(actualSource)) {
+              if (
+                actualSource &&
+                actualSource !== resolvedPath &&
+                !resolvedSources.has(actualSource)
+              ) {
                 resolvedSources.add(actualSource);
                 const actualRow = getNodeId.get(actualSource, 'file', actualSource, 0);
                 if (actualRow) {
-                  insertEdge.run(fileNodeId, actualRow.id, edgeKind === 'imports-type' ? 'imports-type' : 'imports', 0.9, 0);
+                  insertEdge.run(
+                    fileNodeId,
+                    actualRow.id,
+                    edgeKind === 'imports-type' ? 'imports-type' : 'imports',
+                    0.9,
+                    0,
+                  );
                   edgeCount++;
                 }
               }
@@ -431,8 +474,8 @@ export async function buildGraph(rootDir, opts = {}) {
           targets = nodesByNameAndFile.get(`${call.name}|${relPath}`) || [];
           if (targets.length === 0) {
             // Method name match (e.g. ClassName.methodName)
-            const methodCandidates = (nodesByName.get(call.name) || []).filter(n =>
-              n.name.endsWith(`.${call.name}`) && n.kind === 'method'
+            const methodCandidates = (nodesByName.get(call.name) || []).filter(
+              (n) => n.name.endsWith(`.${call.name}`) && n.kind === 'method',
             );
             if (methodCandidates.length > 0) {
               targets = methodCandidates;
@@ -463,9 +506,11 @@ export async function buildGraph(rootDir, opts = {}) {
       // Class extends edges
       for (const cls of symbols.classes) {
         if (cls.extends) {
-          const sourceRow = db.prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ?').get(cls.name, 'class', relPath);
+          const sourceRow = db
+            .prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ?')
+            .get(cls.name, 'class', relPath);
           const targetCandidates = nodesByName.get(cls.extends) || [];
-          const targetRows = targetCandidates.filter(n => n.kind === 'class');
+          const targetRows = targetCandidates.filter((n) => n.kind === 'class');
           if (sourceRow) {
             for (const t of targetRows) {
               insertEdge.run(sourceRow.id, t.id, 'extends', 1.0, 0);
@@ -475,9 +520,13 @@ export async function buildGraph(rootDir, opts = {}) {
         }
 
         if (cls.implements) {
-          const sourceRow = db.prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ?').get(cls.name, 'class', relPath);
+          const sourceRow = db
+            .prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ?')
+            .get(cls.name, 'class', relPath);
           const targetCandidates = nodesByName.get(cls.implements) || [];
-          const targetRows = targetCandidates.filter(n => n.kind === 'interface' || n.kind === 'class');
+          const targetRows = targetCandidates.filter(
+            (n) => n.kind === 'interface' || n.kind === 'class',
+          );
           if (sourceRow) {
             for (const t of targetRows) {
               insertEdge.run(sourceRow.id, t.id, 'implements', 1.0, 0);
@@ -495,4 +544,3 @@ export async function buildGraph(rootDir, opts = {}) {
   console.log(`Stored in ${dbPath}`);
   db.close();
 }
-

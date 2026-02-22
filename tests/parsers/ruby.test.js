@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createParsers, extractRubySymbols } from '../../src/parser.js';
 
 describe('Ruby parser', () => {
@@ -19,7 +19,7 @@ describe('Ruby parser', () => {
     const symbols = parseRuby(`class User
 end`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User', kind: 'class', line: 1 })
+      expect.objectContaining({ name: 'User', kind: 'class', line: 1 }),
     );
   });
 
@@ -32,10 +32,10 @@ end`);
   end
 end`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.bar', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.bar', kind: 'method' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.baz', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.baz', kind: 'method' }),
     );
   });
 
@@ -44,7 +44,7 @@ end`);
   "hello #{name}"
 end`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'greet', kind: 'method' })
+      expect.objectContaining({ name: 'greet', kind: 'method' }),
     );
   });
 
@@ -54,7 +54,7 @@ end`);
   end
 end`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.create', kind: 'function' })
+      expect.objectContaining({ name: 'Foo.create', kind: 'function' }),
     );
   });
 
@@ -64,10 +64,10 @@ end`);
   end
 end`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Serializable', kind: 'class' })
+      expect.objectContaining({ name: 'Serializable', kind: 'class' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Serializable.serialize', kind: 'method' })
+      expect.objectContaining({ name: 'Serializable.serialize', kind: 'method' }),
     );
   });
 
@@ -75,7 +75,7 @@ end`);
     const symbols = parseRuby(`class Admin < User
 end`);
     expect(symbols.classes).toContainEqual(
-      expect.objectContaining({ name: 'Admin', extends: 'User' })
+      expect.objectContaining({ name: 'Admin', extends: 'User' }),
     );
   });
 
@@ -83,10 +83,10 @@ end`);
     const symbols = parseRuby(`require 'json'
 require_relative 'helpers/utils'`);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'json', names: ['json'] })
+      expect.objectContaining({ source: 'json', names: ['json'] }),
     );
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'helpers/utils', names: ['utils'] })
+      expect.objectContaining({ source: 'helpers/utils', names: ['utils'] }),
     );
   });
 
@@ -97,12 +97,8 @@ require_relative 'helpers/utils'`);
     bar.do_something
   end
 end`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'puts' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'do_something' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'puts' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'do_something' }));
   });
 
   it('extracts module include as implements', () => {
@@ -111,10 +107,10 @@ end`);
   extend ClassMethods
 end`);
     expect(symbols.classes).toContainEqual(
-      expect.objectContaining({ name: 'User', implements: 'Comparable' })
+      expect.objectContaining({ name: 'User', implements: 'Comparable' }),
     );
     expect(symbols.classes).toContainEqual(
-      expect.objectContaining({ name: 'User', implements: 'ClassMethods' })
+      expect.objectContaining({ name: 'User', implements: 'ClassMethods' }),
     );
   });
 });

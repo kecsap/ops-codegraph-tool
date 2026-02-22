@@ -1,16 +1,40 @@
-import path from 'path';
+import path from 'node:path';
 
 export const IGNORE_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', '.nuxt', '.svelte-kit',
-  'coverage', '.codegraph', '__pycache__', '.tox', 'vendor', '.venv', 'venv',
-  'env', '.env'
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  'coverage',
+  '.codegraph',
+  '__pycache__',
+  '.tox',
+  'vendor',
+  '.venv',
+  'venv',
+  'env',
+  '.env',
 ]);
 
 export const EXTENSIONS = new Set([
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
-  '.tf', '.hcl', '.py',
-  '.go', '.rs', '.java',
-  '.cs', '.rb', '.php'
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.mjs',
+  '.cjs',
+  '.tf',
+  '.hcl',
+  '.py',
+  '.go',
+  '.rs',
+  '.java',
+  '.cs',
+  '.rb',
+  '.php',
 ]);
 
 export function shouldIgnore(dirName) {

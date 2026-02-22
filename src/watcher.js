@@ -1,15 +1,14 @@
-
-import fs from 'fs';
-import path from 'path';
-import { openDb, initSchema } from './db.js';
-import { parseFileIncremental, createParseTreeCache, getActiveEngine } from './parser.js';
-import { IGNORE_DIRS, EXTENSIONS, normalizePath } from './constants.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { EXTENSIONS, IGNORE_DIRS, normalizePath } from './constants.js';
+import { initSchema, openDb } from './db.js';
+import { info, warn } from './logger.js';
+import { createParseTreeCache, getActiveEngine, parseFileIncremental } from './parser.js';
 import { resolveImportPath } from './resolve.js';
-import { warn, debug, info } from './logger.js';
 
 function shouldIgnore(filePath) {
   const parts = filePath.split(path.sep);
-  return parts.some(p => IGNORE_DIRS.has(p));
+  return parts.some((p) => IGNORE_DIRS.has(p));
 }
 
 function isTrackedExt(filePath) {
@@ -19,11 +18,11 @@ function isTrackedExt(filePath) {
 /**
  * Parse a single file and update the database incrementally.
  */
-async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
+async function updateFile(_db, rootDir, filePath, stmts, engineOpts, cache) {
   const relPath = normalizePath(path.relative(rootDir, filePath));
 
   const oldNodes = stmts.countNodes.get(relPath)?.c || 0;
-  const oldEdges = stmts.countEdgesForFile.get(relPath)?.c || 0;
+  const _oldEdges = stmts.countEdgesForFile.get(relPath)?.c || 0;
 
   stmts.deleteEdgesForFile.run(relPath);
   stmts.deleteNodes.run(relPath);
@@ -34,8 +33,9 @@ async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
   }
 
   let code;
-  try { code = fs.readFileSync(filePath, 'utf-8'); }
-  catch (err) {
+  try {
+    code = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
     warn(`Cannot read ${relPath}: ${err.message}`);
     return null;
   }
@@ -56,14 +56,20 @@ async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
 
   let edgesAdded = 0;
   const fileNodeRow = stmts.getNodeId.get(relPath, 'file', relPath, 0);
-  if (!fileNodeRow) return { file: relPath, nodesAdded: newNodes, nodesRemoved: oldNodes, edgesAdded: 0 };
+  if (!fileNodeRow)
+    return { file: relPath, nodesAdded: newNodes, nodesRemoved: oldNodes, edgesAdded: 0 };
   const fileNodeId = fileNodeRow.id;
 
   // Load aliases for full import resolution
   const aliases = { baseUrl: null, paths: {} };
 
   for (const imp of symbols.imports) {
-    const resolvedPath = resolveImportPath(path.join(rootDir, relPath), imp.source, rootDir, aliases);
+    const resolvedPath = resolveImportPath(
+      path.join(rootDir, relPath),
+      imp.source,
+      rootDir,
+      aliases,
+    );
     const targetRow = stmts.getNodeId.get(resolvedPath, 'file', resolvedPath, 0);
     if (targetRow) {
       const edgeKind = imp.reexport ? 'reexports' : imp.typeOnly ? 'imports-type' : 'imports';
@@ -74,7 +80,12 @@ async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
 
   const importedNames = new Map();
   for (const imp of symbols.imports) {
-    const resolvedPath = resolveImportPath(path.join(rootDir, relPath), imp.source, rootDir, aliases);
+    const resolvedPath = resolveImportPath(
+      path.join(rootDir, relPath),
+      imp.source,
+      rootDir,
+      aliases,
+    );
     for (const name of imp.names) {
       importedNames.set(name.replace(/^\*\s+as\s+/, ''), resolvedPath);
     }
@@ -104,7 +115,13 @@ async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
 
     for (const t of targets) {
       if (t.id !== caller.id) {
-        stmts.insertEdge.run(caller.id, t.id, 'calls', importedFrom ? 1.0 : 0.5, call.dynamic ? 1 : 0);
+        stmts.insertEdge.run(
+          caller.id,
+          t.id,
+          'calls',
+          importedFrom ? 1.0 : 0.5,
+          call.dynamic ? 1 : 0,
+        );
         edgesAdded++;
       }
     }
@@ -115,7 +132,7 @@ async function updateFile(db, rootDir, filePath, stmts, engineOpts, cache) {
     nodesAdded: newNodes,
     nodesRemoved: oldNodes,
     edgesAdded,
-    deleted: false
+    deleted: false,
   };
 }
 
@@ -130,26 +147,46 @@ export async function watchProject(rootDir, opts = {}) {
   initSchema(db);
   const engineOpts = { engine: opts.engine || 'auto' };
   const { name: engineName, version: engineVersion } = getActiveEngine(engineOpts);
-  console.log(`Watch mode using ${engineName} engine${engineVersion ? ` (v${engineVersion})` : ''}`);
+  console.log(
+    `Watch mode using ${engineName} engine${engineVersion ? ` (v${engineVersion})` : ''}`,
+  );
 
   const cache = createParseTreeCache();
-  console.log(cache ? 'Incremental parsing enabled (native tree cache)' : 'Incremental parsing unavailable (full re-parse)');
+  console.log(
+    cache
+      ? 'Incremental parsing enabled (native tree cache)'
+      : 'Incremental parsing unavailable (full re-parse)',
+  );
 
   const stmts = {
-    insertNode: db.prepare('INSERT OR IGNORE INTO nodes (name, kind, file, line, end_line) VALUES (?, ?, ?, ?, ?)'),
-    getNodeId: db.prepare('SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ? AND line = ?'),
-    insertEdge: db.prepare('INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, ?, ?)'),
+    insertNode: db.prepare(
+      'INSERT OR IGNORE INTO nodes (name, kind, file, line, end_line) VALUES (?, ?, ?, ?, ?)',
+    ),
+    getNodeId: db.prepare(
+      'SELECT id FROM nodes WHERE name = ? AND kind = ? AND file = ? AND line = ?',
+    ),
+    insertEdge: db.prepare(
+      'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, ?, ?)',
+    ),
     deleteNodes: db.prepare('DELETE FROM nodes WHERE file = ?'),
     deleteEdgesForFile: null,
     countNodes: db.prepare('SELECT COUNT(*) as c FROM nodes WHERE file = ?'),
     countEdgesForFile: null,
-    findNodeInFile: db.prepare('SELECT id, file FROM nodes WHERE name = ? AND kind IN (\'function\', \'method\', \'class\', \'interface\') AND file = ?'),
-    findNodeByName: db.prepare('SELECT id, file FROM nodes WHERE name = ? AND kind IN (\'function\', \'method\', \'class\', \'interface\')'),
+    findNodeInFile: db.prepare(
+      "SELECT id, file FROM nodes WHERE name = ? AND kind IN ('function', 'method', 'class', 'interface') AND file = ?",
+    ),
+    findNodeByName: db.prepare(
+      "SELECT id, file FROM nodes WHERE name = ? AND kind IN ('function', 'method', 'class', 'interface')",
+    ),
   };
 
   // Use named params for statements needing the same value twice
-  const origDeleteEdges = db.prepare(`DELETE FROM edges WHERE source_id IN (SELECT id FROM nodes WHERE file = @f) OR target_id IN (SELECT id FROM nodes WHERE file = @f)`);
-  const origCountEdges = db.prepare(`SELECT COUNT(*) as c FROM edges WHERE source_id IN (SELECT id FROM nodes WHERE file = @f) OR target_id IN (SELECT id FROM nodes WHERE file = @f)`);
+  const origDeleteEdges = db.prepare(
+    `DELETE FROM edges WHERE source_id IN (SELECT id FROM nodes WHERE file = @f) OR target_id IN (SELECT id FROM nodes WHERE file = @f)`,
+  );
+  const origCountEdges = db.prepare(
+    `SELECT COUNT(*) as c FROM edges WHERE source_id IN (SELECT id FROM nodes WHERE file = @f) OR target_id IN (SELECT id FROM nodes WHERE file = @f)`,
+  );
   stmts.deleteEdgesForFile = { run: (f) => origDeleteEdges.run({ f }) };
   stmts.countEdgesForFile = { get: (f) => origCountEdges.get({ f }) };
 
@@ -182,7 +219,7 @@ export async function watchProject(rootDir, opts = {}) {
   console.log(`Watching ${rootDir} for changes...`);
   console.log('Press Ctrl+C to stop.\n');
 
-  const watcher = fs.watch(rootDir, { recursive: true }, (eventType, filename) => {
+  const watcher = fs.watch(rootDir, { recursive: true }, (_eventType, filename) => {
     if (!filename) return;
     if (shouldIgnore(filename)) return;
     if (!isTrackedExt(filename)) return;
@@ -202,4 +239,3 @@ export async function watchProject(rootDir, opts = {}) {
     process.exit(0);
   });
 }
-

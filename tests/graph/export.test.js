@@ -1,10 +1,11 @@
 /**
  * Graph export tests.
  */
-import { describe, it, expect } from 'vitest';
+
 import Database from 'better-sqlite3';
+import { describe, expect, it } from 'vitest';
 import { initSchema } from '../../src/db.js';
-import { exportDOT, exportMermaid, exportJSON } from '../../src/export.js';
+import { exportDOT, exportJSON, exportMermaid } from '../../src/export.js';
 
 function createTestDb() {
   const db = new Database(':memory:');
@@ -14,11 +15,15 @@ function createTestDb() {
 }
 
 function insertNode(db, name, kind, file, line) {
-  return db.prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)').run(name, kind, file, line).lastInsertRowid;
+  return db
+    .prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)')
+    .run(name, kind, file, line).lastInsertRowid;
 }
 
 function insertEdge(db, sourceId, targetId, kind) {
-  db.prepare('INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)').run(sourceId, targetId, kind);
+  db.prepare(
+    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)',
+  ).run(sourceId, targetId, kind);
 }
 
 describe('exportDOT', () => {

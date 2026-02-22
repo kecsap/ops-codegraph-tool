@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 
 /**
  * Export the dependency graph in DOT (Graphviz) format.
@@ -10,17 +10,19 @@ export function exportDOT(db, opts = {}) {
     '  rankdir=LR;',
     '  node [shape=box, fontname="monospace", fontsize=10];',
     '  edge [color="#666666"];',
-    ''
+    '',
   ];
 
   if (fileLevel) {
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT DISTINCT n1.file AS source, n2.file AS target
       FROM edges e
       JOIN nodes n1 ON e.source_id = n1.id
       JOIN nodes n2 ON e.target_id = n2.id
       WHERE n1.file != n2.file AND e.kind IN ('imports', 'imports-type', 'calls')
-    `).all();
+    `)
+      .all();
 
     const dirs = new Map();
     const allFiles = new Set();
@@ -52,7 +54,8 @@ export function exportDOT(db, opts = {}) {
       lines.push(`  "${source}" -> "${target}";`);
     }
   } else {
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT n1.name AS source_name, n1.kind AS source_kind, n1.file AS source_file,
              n2.name AS target_name, n2.kind AS target_kind, n2.file AS target_file,
              e.kind AS edge_kind
@@ -61,7 +64,8 @@ export function exportDOT(db, opts = {}) {
       JOIN nodes n2 ON e.target_id = n2.id
       WHERE n1.kind IN ('function', 'method', 'class') AND n2.kind IN ('function', 'method', 'class')
       AND e.kind = 'calls'
-    `).all();
+    `)
+      .all();
 
     for (const e of edges) {
       const sId = `${e.source_file}:${e.source_name}`.replace(/[^a-zA-Z0-9_]/g, '_');
@@ -84,13 +88,15 @@ export function exportMermaid(db, opts = {}) {
   const lines = ['graph LR'];
 
   if (fileLevel) {
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT DISTINCT n1.file AS source, n2.file AS target
       FROM edges e
       JOIN nodes n1 ON e.source_id = n1.id
       JOIN nodes n2 ON e.target_id = n2.id
       WHERE n1.file != n2.file AND e.kind IN ('imports', 'imports-type', 'calls')
-    `).all();
+    `)
+      .all();
 
     for (const { source, target } of edges) {
       const s = source.replace(/[^a-zA-Z0-9]/g, '_');
@@ -98,7 +104,8 @@ export function exportMermaid(db, opts = {}) {
       lines.push(`  ${s}["${source}"] --> ${t}["${target}"]`);
     }
   } else {
-    const edges = db.prepare(`
+    const edges = db
+      .prepare(`
       SELECT n1.name AS source_name, n1.file AS source_file,
              n2.name AS target_name, n2.file AS target_file
       FROM edges e
@@ -106,7 +113,8 @@ export function exportMermaid(db, opts = {}) {
       JOIN nodes n2 ON e.target_id = n2.id
       WHERE n1.kind IN ('function', 'method', 'class') AND n2.kind IN ('function', 'method', 'class')
       AND e.kind = 'calls'
-    `).all();
+    `)
+      .all();
 
     for (const e of edges) {
       const sId = `${e.source_file}_${e.source_name}`.replace(/[^a-zA-Z0-9]/g, '_');
@@ -122,17 +130,21 @@ export function exportMermaid(db, opts = {}) {
  * Export as JSON adjacency list.
  */
 export function exportJSON(db) {
-  const nodes = db.prepare(`
+  const nodes = db
+    .prepare(`
     SELECT id, name, kind, file, line FROM nodes WHERE kind = 'file'
-  `).all();
+  `)
+    .all();
 
-  const edges = db.prepare(`
+  const edges = db
+    .prepare(`
     SELECT DISTINCT n1.file AS source, n2.file AS target, e.kind
     FROM edges e
     JOIN nodes n1 ON e.source_id = n1.id
     JOIN nodes n2 ON e.target_id = n2.id
     WHERE n1.file != n2.file
-  `).all();
+  `)
+    .all();
 
   return { nodes, edges };
 }

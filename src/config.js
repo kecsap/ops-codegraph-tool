@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { debug } from './logger.js';
 
 export const CONFIG_FILES = ['.codegraphrc.json', '.codegraphrc', 'codegraph.config.json'];
@@ -12,12 +12,12 @@ export const DEFAULTS = {
   aliases: {},
   build: {
     incremental: true,
-    dbPath: '.codegraph/graph.db'
+    dbPath: '.codegraph/graph.db',
   },
   query: {
     defaultDepth: 3,
-    defaultLimit: 20
-  }
+    defaultLimit: 20,
+  },
 };
 
 /**
@@ -45,7 +45,13 @@ export function loadConfig(cwd) {
 function mergeConfig(defaults, overrides) {
   const result = { ...defaults };
   for (const [key, value] of Object.entries(overrides)) {
-    if (value && typeof value === 'object' && !Array.isArray(value) && defaults[key] && typeof defaults[key] === 'object') {
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      defaults[key] &&
+      typeof defaults[key] === 'object'
+    ) {
       result[key] = { ...defaults[key], ...value };
     } else {
       result[key] = value;

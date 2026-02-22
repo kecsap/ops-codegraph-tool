@@ -1,7 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { warn, debug, info } from './logger.js';
+import { debug } from './logger.js';
 
 // ─── Schema Migrations ─────────────────────────────────────────────────
 export const MIGRATIONS = [
@@ -33,7 +33,7 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
       CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
       CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
-    `
+    `,
   },
   {
     version: 2,
@@ -42,7 +42,7 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_nodes_file_kind ON nodes(file, kind);
       CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source_id, kind);
       CREATE INDEX IF NOT EXISTS idx_edges_target_kind ON edges(target_id, kind);
-    `
+    `,
   },
   {
     version: 3,
@@ -52,8 +52,8 @@ export const MIGRATIONS = [
         hash TEXT NOT NULL,
         mtime INTEGER NOT NULL
       );
-    `
-  }
+    `,
+  },
 ];
 
 export function openDb(dbPath) {
@@ -83,9 +83,21 @@ export function initSchema(db) {
     }
   }
 
-  try { db.exec('ALTER TABLE nodes ADD COLUMN end_line INTEGER'); } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE edges ADD COLUMN confidence REAL DEFAULT 1.0'); } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE edges ADD COLUMN dynamic INTEGER DEFAULT 0'); } catch { /* already exists */ }
+  try {
+    db.exec('ALTER TABLE nodes ADD COLUMN end_line INTEGER');
+  } catch {
+    /* already exists */
+  }
+  try {
+    db.exec('ALTER TABLE edges ADD COLUMN confidence REAL DEFAULT 1.0');
+  } catch {
+    /* already exists */
+  }
+  try {
+    db.exec('ALTER TABLE edges ADD COLUMN dynamic INTEGER DEFAULT 0');
+  } catch {
+    /* already exists */
+  }
 }
 
 export function findDbPath(customPath) {
@@ -109,7 +121,7 @@ export function openReadonlyOrFail(customPath) {
   if (!fs.existsSync(dbPath)) {
     console.error(
       `No codegraph database found at ${dbPath}.\n` +
-      `Run "codegraph build" first to analyze your codebase.`
+        `Run "codegraph build" first to analyze your codebase.`,
     );
     process.exit(1);
   }

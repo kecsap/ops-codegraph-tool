@@ -13,15 +13,18 @@ export function findCycles(db, opts = {}) {
   // Build adjacency list from SQLite (stays in JS — only the algorithm can move to Rust)
   let edges;
   if (fileLevel) {
-    edges = db.prepare(`
+    edges = db
+      .prepare(`
       SELECT DISTINCT n1.file AS source, n2.file AS target
       FROM edges e
       JOIN nodes n1 ON e.source_id = n1.id
       JOIN nodes n2 ON e.target_id = n2.id
       WHERE n1.file != n2.file AND e.kind IN ('imports', 'imports-type')
-    `).all();
+    `)
+      .all();
   } else {
-    edges = db.prepare(`
+    edges = db
+      .prepare(`
       SELECT DISTINCT
         (n1.name || '|' || n1.file) AS source,
         (n2.name || '|' || n2.file) AS target
@@ -32,7 +35,8 @@ export function findCycles(db, opts = {}) {
         AND n2.kind IN ('function', 'method', 'class')
         AND e.kind = 'calls'
         AND n1.id != n2.id
-    `).all();
+    `)
+      .all();
   }
 
   // Try native Rust implementation
@@ -71,7 +75,7 @@ export function findCyclesJS(edges) {
     stack.push(v);
     onStack.add(v);
 
-    for (const w of (graph.get(v) || [])) {
+    for (const w of graph.get(v) || []) {
       if (!indices.has(w)) {
         strongconnect(w);
         lowlinks.set(v, Math.min(lowlinks.get(v), lowlinks.get(w)));

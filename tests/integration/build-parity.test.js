@@ -7,13 +7,13 @@
  * Skipped when the native engine is not installed.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildGraph } from '../../src/builder.js';
 import { isNativeAvailable } from '../../src/native.js';
-import Database from 'better-sqlite3';
 
 const FIXTURE_DIR = path.join(import.meta.dirname, '..', 'fixtures', 'sample-project');
 
@@ -32,14 +32,18 @@ function copyDirSync(src, dest) {
 
 function readGraph(dbPath) {
   const db = new Database(dbPath, { readonly: true });
-  const nodes = db.prepare('SELECT name, kind, file, line FROM nodes ORDER BY name, kind, file, line').all();
-  const edges = db.prepare(`
+  const nodes = db
+    .prepare('SELECT name, kind, file, line FROM nodes ORDER BY name, kind, file, line')
+    .all();
+  const edges = db
+    .prepare(`
     SELECT n1.name AS source_name, n2.name AS target_name, e.kind
     FROM edges e
     JOIN nodes n1 ON e.source_id = n1.id
     JOIN nodes n2 ON e.target_id = n2.id
     ORDER BY n1.name, n2.name, e.kind
-  `).all();
+  `)
+    .all();
   db.close();
   return { nodes, edges };
 }
@@ -66,7 +70,9 @@ describeOrSkip('Build parity: native vs WASM', () => {
     // Cleanup
     try {
       if (wasmDir) fs.rmSync(path.dirname(wasmDir), { recursive: true, force: true });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
 
   it('produces identical nodes', () => {

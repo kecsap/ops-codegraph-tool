@@ -1,10 +1,11 @@
 /**
  * Circular dependency detection tests.
  */
-import { describe, it, expect } from 'vitest';
+
 import Database from 'better-sqlite3';
-import { initSchema } from '../../src/db.js';
+import { describe, expect, it } from 'vitest';
 import { findCycles, findCyclesJS } from '../../src/cycles.js';
+import { initSchema } from '../../src/db.js';
 import { isNativeAvailable, loadNative } from '../../src/native.js';
 
 const hasNative = isNativeAvailable();
@@ -17,11 +18,15 @@ function createTestDb() {
 }
 
 function insertNode(db, name, kind, file, line) {
-  return db.prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)').run(name, kind, file, line).lastInsertRowid;
+  return db
+    .prepare('INSERT INTO nodes (name, kind, file, line) VALUES (?, ?, ?, ?)')
+    .run(name, kind, file, line).lastInsertRowid;
 }
 
 function insertEdge(db, sourceId, targetId, kind) {
-  db.prepare('INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)').run(sourceId, targetId, kind);
+  db.prepare(
+    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)',
+  ).run(sourceId, targetId, kind);
 }
 
 describe('findCycles', () => {
@@ -105,9 +110,7 @@ describe.skipIf(!hasNative)('Cycle detection: native vs JS parity', () => {
   const native = hasNative ? loadNative() : null;
 
   function sortCycles(cycles) {
-    return cycles
-      .map(c => [...c].sort())
-      .sort((a, b) => a[0].localeCompare(b[0]));
+    return cycles.map((c) => [...c].sort()).sort((a, b) => a[0].localeCompare(b[0]));
   }
 
   it('no cycles — both engines agree', () => {

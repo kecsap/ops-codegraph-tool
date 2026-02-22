@@ -6,40 +6,45 @@
  */
 
 // Graph building
-export { buildGraph, resolveImportPath, collectFiles, loadPathAliases } from './builder.js';
-
-// Query functions (data-returning)
-export {
-  queryNameData, impactAnalysisData, moduleMapData,
-  fileDepsData, fnDepsData, fnImpactData, diffImpactData
-} from './queries.js';
-
-// Watch mode
-export { watchProject } from './watcher.js';
-
-// Export (DOT/Mermaid/JSON)
-export { exportDOT, exportMermaid, exportJSON } from './export.js';
-
-// Circular dependency detection
-export { findCycles, formatCycles } from './cycles.js';
-
-// Embeddings
-export { buildEmbeddings, search, searchData, multiSearchData, embed, cosineSim, MODELS, DEFAULT_MODEL } from './embedder.js';
-
-// Database utilities
-export { openDb, initSchema, findDbPath, openReadonlyOrFail } from './db.js';
-
+export { buildGraph, collectFiles, loadPathAliases, resolveImportPath } from './builder.js';
 // Configuration
 export { loadConfig } from './config.js';
-
 // Shared constants
 export { EXTENSIONS, IGNORE_DIRS, normalizePath } from './constants.js';
+// Circular dependency detection
+export { findCycles, formatCycles } from './cycles.js';
+// Database utilities
+export { findDbPath, initSchema, openDb, openReadonlyOrFail } from './db.js';
 
-// Unified parser API
-export { parseFileAuto, parseFilesAuto, getActiveEngine } from './parser.js';
-
+// Embeddings
+export {
+  buildEmbeddings,
+  cosineSim,
+  DEFAULT_MODEL,
+  embed,
+  MODELS,
+  multiSearchData,
+  search,
+  searchData,
+} from './embedder.js';
+// Export (DOT/Mermaid/JSON)
+export { exportDOT, exportJSON, exportMermaid } from './export.js';
+// Logger
+export { setVerbose } from './logger.js';
 // Native engine
 export { isNativeAvailable } from './native.js';
 
-// Logger
-export { setVerbose } from './logger.js';
+// Unified parser API
+export { getActiveEngine, parseFileAuto, parseFilesAuto } from './parser.js';
+// Query functions (data-returning)
+export {
+  diffImpactData,
+  fileDepsData,
+  fnDepsData,
+  fnImpactData,
+  impactAnalysisData,
+  moduleMapData,
+  queryNameData,
+} from './queries.js';
+// Watch mode
+export { watchProject } from './watcher.js';

@@ -20,7 +20,13 @@ npx vitest run -t "finds cycles"                  # Single test by name
 npm run build:wasm               # Rebuild WASM grammars (only after upgrading grammar devDeps)
 ```
 
-No linter is currently configured.
+**Linter/Formatter:** [Biome](https://biomejs.dev/) — config in `biome.json`, scoped to `src/` and `tests/`.
+
+```bash
+npm run lint                     # Check for lint + format issues
+npm run lint:fix                 # Auto-fix lint + format issues
+npm run format                   # Auto-format only
+```
 
 ## Architecture
 

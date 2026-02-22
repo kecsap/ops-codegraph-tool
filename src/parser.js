@@ -1,10 +1,10 @@
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import fs from 'node:fs';
-import { Parser, Language } from 'web-tree-sitter';
-import { warn, debug } from './logger.js';
-import { loadNative, isNativeAvailable } from './native.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Language, Parser } from 'web-tree-sitter';
 import { normalizePath } from './constants.js';
+import { warn } from './logger.js';
+import { loadNative } from './native.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -105,13 +105,30 @@ export async function createParsers() {
     warn(`PHP parser failed to initialize: ${e.message}. PHP files will be skipped.`);
   }
 
-  return { jsParser, tsParser, tsxParser, hclParser, pyParser, goParser, rustParser, javaParser, csharpParser, rubyParser, phpParser };
+  return {
+    jsParser,
+    tsParser,
+    tsxParser,
+    hclParser,
+    pyParser,
+    goParser,
+    rustParser,
+    javaParser,
+    csharpParser,
+    rubyParser,
+    phpParser,
+  };
 }
 
 export function getParser(parsers, filePath) {
   if (filePath.endsWith('.tsx')) return parsers.tsxParser;
   if (filePath.endsWith('.ts') || filePath.endsWith('.d.ts')) return parsers.tsParser;
-  if (filePath.endsWith('.js') || filePath.endsWith('.jsx') || filePath.endsWith('.mjs') || filePath.endsWith('.cjs'))
+  if (
+    filePath.endsWith('.js') ||
+    filePath.endsWith('.jsx') ||
+    filePath.endsWith('.mjs') ||
+    filePath.endsWith('.cjs')
+  )
     return parsers.jsParser;
   if (filePath.endsWith('.py') && parsers.pyParser) return parsers.pyParser;
   if ((filePath.endsWith('.tf') || filePath.endsWith('.hcl')) && parsers.hclParser)
@@ -132,7 +149,7 @@ function nodeEndLine(node) {
 /**
  * Extract symbols from a JS/TS parsed AST.
  */
-export function extractSymbols(tree, filePath) {
+export function extractSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -144,7 +161,12 @@ export function extractSymbols(tree, filePath) {
       case 'function_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'function', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'function',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -152,17 +174,30 @@ export function extractSymbols(tree, filePath) {
       case 'class_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          const cls = { name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) };
+          const cls = {
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          };
           definitions.push(cls);
           const heritage = node.childForFieldName('heritage') || findChild(node, 'class_heritage');
           if (heritage) {
             const superName = extractSuperclass(heritage);
             if (superName) {
-              classes.push({ name: nameNode.text, extends: superName, line: node.startPosition.row + 1 });
+              classes.push({
+                name: nameNode.text,
+                extends: superName,
+                line: node.startPosition.row + 1,
+              });
             }
             const implementsList = extractImplements(heritage);
             for (const iface of implementsList) {
-              classes.push({ name: nameNode.text, implements: iface, line: node.startPosition.row + 1 });
+              classes.push({
+                name: nameNode.text,
+                implements: iface,
+                line: node.startPosition.row + 1,
+              });
             }
           }
         }
@@ -172,9 +207,14 @@ export function extractSymbols(tree, filePath) {
       case 'method_definition': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          let parentClass = findParentClass(node);
+          const parentClass = findParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -182,8 +222,16 @@ export function extractSymbols(tree, filePath) {
       case 'interface_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
-          const body = node.childForFieldName('body') || findChild(node, 'interface_body') || findChild(node, 'object_type');
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
+          const body =
+            node.childForFieldName('body') ||
+            findChild(node, 'interface_body') ||
+            findChild(node, 'object_type');
           if (body) {
             extractInterfaceMethods(body, nameNode.text, definitions);
           }
@@ -194,7 +242,12 @@ export function extractSymbols(tree, filePath) {
       case 'type_alias_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'type', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'type',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -206,8 +259,19 @@ export function extractSymbols(tree, filePath) {
           if (declarator && declarator.type === 'variable_declarator') {
             const nameN = declarator.childForFieldName('name');
             const valueN = declarator.childForFieldName('value');
-            if (nameN && valueN && (valueN.type === 'arrow_function' || valueN.type === 'function_expression' || valueN.type === 'function')) {
-              definitions.push({ name: nameN.text, kind: 'function', line: node.startPosition.row + 1, endLine: nodeEndLine(valueN) });
+            if (
+              nameN &&
+              valueN &&
+              (valueN.type === 'arrow_function' ||
+                valueN.type === 'function_expression' ||
+                valueN.type === 'function')
+            ) {
+              definitions.push({
+                name: nameN.text,
+                kind: 'function',
+                line: node.startPosition.row + 1,
+                endLine: nodeEndLine(valueN),
+              });
             }
           }
         }
@@ -231,7 +295,12 @@ export function extractSymbols(tree, filePath) {
         if (source) {
           const modPath = source.text.replace(/['"]/g, '');
           const names = extractImportNames(node);
-          imports.push({ source: modPath, names, line: node.startPosition.row + 1, typeOnly: isTypeOnly });
+          imports.push({
+            source: modPath,
+            names,
+            line: node.startPosition.row + 1,
+            typeOnly: isTypeOnly,
+          });
         }
         break;
       }
@@ -241,13 +310,15 @@ export function extractSymbols(tree, filePath) {
         if (decl) {
           if (decl.type === 'function_declaration') {
             const n = decl.childForFieldName('name');
-            if (n) exports.push({ name: n.text, kind: 'function', line: node.startPosition.row + 1 });
+            if (n)
+              exports.push({ name: n.text, kind: 'function', line: node.startPosition.row + 1 });
           } else if (decl.type === 'class_declaration') {
             const n = decl.childForFieldName('name');
             if (n) exports.push({ name: n.text, kind: 'class', line: node.startPosition.row + 1 });
           } else if (decl.type === 'interface_declaration') {
             const n = decl.childForFieldName('name');
-            if (n) exports.push({ name: n.text, kind: 'interface', line: node.startPosition.row + 1 });
+            if (n)
+              exports.push({ name: n.text, kind: 'interface', line: node.startPosition.row + 1 });
           } else if (decl.type === 'type_alias_declaration') {
             const n = decl.childForFieldName('name');
             if (n) exports.push({ name: n.text, kind: 'type', line: node.startPosition.row + 1 });
@@ -258,7 +329,13 @@ export function extractSymbols(tree, filePath) {
           const modPath = source.text.replace(/['"]/g, '');
           const reexportNames = extractImportNames(node);
           const isWildcard = node.text.includes('export *') || node.text.includes('export*');
-          imports.push({ source: modPath, names: reexportNames, line: node.startPosition.row + 1, reexport: true, wildcardReexport: isWildcard && reexportNames.length === 0 });
+          imports.push({
+            source: modPath,
+            names: reexportNames,
+            line: node.startPosition.row + 1,
+            reexport: true,
+            wildcardReexport: isWildcard && reexportNames.length === 0,
+          });
         }
         break;
       }
@@ -278,7 +355,13 @@ export function extractSymbols(tree, filePath) {
                   const strArg = findChild(args, 'string');
                   if (strArg) {
                     const modPath = strArg.text.replace(/['"]/g, '');
-                    imports.push({ source: modPath, names: [], line: node.startPosition.row + 1, reexport: true, wildcardReexport: true });
+                    imports.push({
+                      source: modPath,
+                      names: [],
+                      line: node.startPosition.row + 1,
+                      reexport: true,
+                      wildcardReexport: true,
+                    });
                   }
                 }
               }
@@ -289,12 +372,20 @@ export function extractSymbols(tree, filePath) {
                     const spreadExpr = child.child(1) || child.childForFieldName('value');
                     if (spreadExpr && spreadExpr.type === 'call_expression') {
                       const fn2 = spreadExpr.childForFieldName('function');
-                      const args2 = spreadExpr.childForFieldName('arguments') || findChild(spreadExpr, 'arguments');
+                      const args2 =
+                        spreadExpr.childForFieldName('arguments') ||
+                        findChild(spreadExpr, 'arguments');
                       if (fn2 && fn2.text === 'require' && args2) {
                         const strArg2 = findChild(args2, 'string');
                         if (strArg2) {
                           const modPath2 = strArg2.text.replace(/['"]/g, '');
-                          imports.push({ source: modPath2, names: [], line: node.startPosition.row + 1, reexport: true, wildcardReexport: true });
+                          imports.push({
+                            source: modPath2,
+                            names: [],
+                            line: node.startPosition.row + 1,
+                            reexport: true,
+                            wildcardReexport: true,
+                          });
                         }
                       }
                     }
@@ -328,7 +419,7 @@ function extractInterfaceMethods(bodyNode, interfaceName, definitions) {
           name: `${interfaceName}.${nameNode.text}`,
           kind: 'method',
           line: child.startPosition.row + 1,
-          endLine: child.endPosition.row + 1
+          endLine: child.endPosition.row + 1,
         });
       }
     }
@@ -379,16 +470,19 @@ function extractCallInfo(fn, callNode) {
     if (!prop) return null;
 
     if (prop.text === 'call' || prop.text === 'apply' || prop.text === 'bind') {
-      if (obj && obj.type === 'identifier') return { name: obj.text, line: callNode.startPosition.row + 1, dynamic: true };
+      if (obj && obj.type === 'identifier')
+        return { name: obj.text, line: callNode.startPosition.row + 1, dynamic: true };
       if (obj && obj.type === 'member_expression') {
         const innerProp = obj.childForFieldName('property');
-        if (innerProp) return { name: innerProp.text, line: callNode.startPosition.row + 1, dynamic: true };
+        if (innerProp)
+          return { name: innerProp.text, line: callNode.startPosition.row + 1, dynamic: true };
       }
     }
 
     if (prop.type === 'string' || prop.type === 'string_fragment') {
       const methodName = prop.text.replace(/['"]/g, '');
-      if (methodName) return { name: methodName, line: callNode.startPosition.row + 1, dynamic: true };
+      if (methodName)
+        return { name: methodName, line: callNode.startPosition.row + 1, dynamic: true };
     }
 
     return { name: prop.text, line: callNode.startPosition.row + 1 };
@@ -398,7 +492,8 @@ function extractCallInfo(fn, callNode) {
     const index = fn.childForFieldName('index');
     if (index && (index.type === 'string' || index.type === 'template_string')) {
       const methodName = index.text.replace(/['"`]/g, '');
-      if (methodName && !methodName.includes('$')) return { name: methodName, line: callNode.startPosition.row + 1, dynamic: true };
+      if (methodName && !methodName.includes('$'))
+        return { name: methodName, line: callNode.startPosition.row + 1, dynamic: true };
     }
   }
 
@@ -456,7 +551,7 @@ function extractImportNames(node) {
 /**
  * Extract symbols from HCL (Terraform) files.
  */
-export function extractHCLSymbols(tree, filePath) {
+export function extractHCLSymbols(tree, _filePath) {
   const definitions = [];
   const imports = [];
 
@@ -465,8 +560,8 @@ export function extractHCLSymbols(tree, filePath) {
       const children = [];
       for (let i = 0; i < node.childCount; i++) children.push(node.child(i));
 
-      const identifiers = children.filter(c => c.type === 'identifier');
-      const strings = children.filter(c => c.type === 'string_lit');
+      const identifiers = children.filter((c) => c.type === 'identifier');
+      const strings = children.filter((c) => c.type === 'string_lit');
 
       if (identifiers.length > 0) {
         const blockType = identifiers[0].text;
@@ -476,7 +571,10 @@ export function extractHCLSymbols(tree, filePath) {
           name = `${strings[0].text.replace(/"/g, '')}.${strings[1].text.replace(/"/g, '')}`;
         } else if (blockType === 'data' && strings.length >= 2) {
           name = `data.${strings[0].text.replace(/"/g, '')}.${strings[1].text.replace(/"/g, '')}`;
-        } else if ((blockType === 'variable' || blockType === 'output' || blockType === 'module') && strings.length >= 1) {
+        } else if (
+          (blockType === 'variable' || blockType === 'output' || blockType === 'module') &&
+          strings.length >= 1
+        ) {
           name = `${blockType}.${strings[0].text.replace(/"/g, '')}`;
         } else if (blockType === 'locals') {
           name = 'locals';
@@ -486,11 +584,16 @@ export function extractHCLSymbols(tree, filePath) {
         }
 
         if (name) {
-          definitions.push({ name, kind: blockType, line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name,
+            kind: blockType,
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
 
         if (blockType === 'module') {
-          const body = children.find(c => c.type === 'body');
+          const body = children.find((c) => c.type === 'body');
           if (body) {
             for (let i = 0; i < body.childCount; i++) {
               const attr = body.child(i);
@@ -520,7 +623,7 @@ export function extractHCLSymbols(tree, filePath) {
 /**
  * Extract symbols from Python files.
  */
-export function extractPythonSymbols(tree, filePath) {
+export function extractPythonSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -532,14 +635,20 @@ export function extractPythonSymbols(tree, filePath) {
       case 'function_definition': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          let decorators = [];
+          const decorators = [];
           if (node.previousSibling && node.previousSibling.type === 'decorator') {
             decorators.push(node.previousSibling.text);
           }
           const parentClass = findPythonParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
           const kind = parentClass ? 'method' : 'function';
-          definitions.push({ name: fullName, kind, line: node.startPosition.row + 1, endLine: nodeEndLine(node), decorators });
+          definitions.push({
+            name: fullName,
+            kind,
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+            decorators,
+          });
         }
         break;
       }
@@ -547,13 +656,23 @@ export function extractPythonSymbols(tree, filePath) {
       case 'class_definition': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
-          const superclasses = node.childForFieldName('superclasses') || findChild(node, 'argument_list');
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
+          const superclasses =
+            node.childForFieldName('superclasses') || findChild(node, 'argument_list');
           if (superclasses) {
             for (let i = 0; i < superclasses.childCount; i++) {
               const child = superclasses.child(i);
               if (child && child.type === 'identifier') {
-                classes.push({ name: nameNode.text, extends: child.text, line: node.startPosition.row + 1 });
+                classes.push({
+                  name: nameNode.text,
+                  extends: child.text,
+                  line: node.startPosition.row + 1,
+                });
               }
             }
           }
@@ -585,13 +704,20 @@ export function extractPythonSymbols(tree, filePath) {
         for (let i = 0; i < node.childCount; i++) {
           const child = node.child(i);
           if (child && (child.type === 'dotted_name' || child.type === 'aliased_import')) {
-            const name = child.type === 'aliased_import' ?
-              (child.childForFieldName('alias') || child.childForFieldName('name'))?.text :
-              child.text;
+            const name =
+              child.type === 'aliased_import'
+                ? (child.childForFieldName('alias') || child.childForFieldName('name'))?.text
+                : child.text;
             if (name) names.push(name);
           }
         }
-        if (names.length > 0) imports.push({ source: names[0], names, line: node.startPosition.row + 1, pythonImport: true });
+        if (names.length > 0)
+          imports.push({
+            source: names[0],
+            names,
+            line: node.startPosition.row + 1,
+            pythonImport: true,
+          });
         break;
       }
 
@@ -611,7 +737,8 @@ export function extractPythonSymbols(tree, filePath) {
           }
           if (child.type === 'wildcard_import') names.push('*');
         }
-        if (source) imports.push({ source, names, line: node.startPosition.row + 1, pythonImport: true });
+        if (source)
+          imports.push({ source, names, line: node.startPosition.row + 1, pythonImport: true });
         break;
       }
     }
@@ -638,7 +765,7 @@ export function extractPythonSymbols(tree, filePath) {
 /**
  * Extract symbols from Go files.
  */
-export function extractGoSymbols(tree, filePath) {
+export function extractGoSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -650,7 +777,12 @@ export function extractGoSymbols(tree, filePath) {
       case 'function_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'function', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'function',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -667,15 +799,21 @@ export function extractGoSymbols(tree, filePath) {
               if (!param) continue;
               const typeNode = param.childForFieldName('type');
               if (typeNode) {
-                receiverType = typeNode.type === 'pointer_type'
-                  ? typeNode.text.replace(/^\*/, '')
-                  : typeNode.text;
+                receiverType =
+                  typeNode.type === 'pointer_type'
+                    ? typeNode.text.replace(/^\*/, '')
+                    : typeNode.text;
                 break;
               }
             }
           }
           const fullName = receiverType ? `${receiverType}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -688,20 +826,40 @@ export function extractGoSymbols(tree, filePath) {
           const typeNode = spec.childForFieldName('type');
           if (nameNode && typeNode) {
             if (typeNode.type === 'struct_type') {
-              definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+              definitions.push({
+                name: nameNode.text,
+                kind: 'class',
+                line: node.startPosition.row + 1,
+                endLine: nodeEndLine(node),
+              });
             } else if (typeNode.type === 'interface_type') {
-              definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+              definitions.push({
+                name: nameNode.text,
+                kind: 'interface',
+                line: node.startPosition.row + 1,
+                endLine: nodeEndLine(node),
+              });
               for (let j = 0; j < typeNode.childCount; j++) {
                 const member = typeNode.child(j);
                 if (member && member.type === 'method_elem') {
                   const methName = member.childForFieldName('name');
                   if (methName) {
-                    definitions.push({ name: `${nameNode.text}.${methName.text}`, kind: 'method', line: member.startPosition.row + 1, endLine: member.endPosition.row + 1 });
+                    definitions.push({
+                      name: `${nameNode.text}.${methName.text}`,
+                      kind: 'method',
+                      line: member.startPosition.row + 1,
+                      endLine: member.endPosition.row + 1,
+                    });
                   }
                 }
               }
             } else {
-              definitions.push({ name: nameNode.text, kind: 'type', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+              definitions.push({
+                name: nameNode.text,
+                kind: 'type',
+                line: node.startPosition.row + 1,
+                endLine: nodeEndLine(node),
+              });
             }
           }
         }
@@ -718,7 +876,12 @@ export function extractGoSymbols(tree, filePath) {
               const importPath = pathNode.text.replace(/"/g, '');
               const nameNode = child.childForFieldName('name');
               const alias = nameNode ? nameNode.text : importPath.split('/').pop();
-              imports.push({ source: importPath, names: [alias], line: child.startPosition.row + 1, goImport: true });
+              imports.push({
+                source: importPath,
+                names: [alias],
+                line: child.startPosition.row + 1,
+                goImport: true,
+              });
             }
           }
           if (child.type === 'import_spec_list') {
@@ -730,7 +893,12 @@ export function extractGoSymbols(tree, filePath) {
                   const importPath = pathNode.text.replace(/"/g, '');
                   const nameNode = spec.childForFieldName('name');
                   const alias = nameNode ? nameNode.text : importPath.split('/').pop();
-                  imports.push({ source: importPath, names: [alias], line: spec.startPosition.row + 1, goImport: true });
+                  imports.push({
+                    source: importPath,
+                    names: [alias],
+                    line: spec.startPosition.row + 1,
+                    goImport: true,
+                  });
                 }
               }
             }
@@ -763,7 +931,7 @@ export function extractGoSymbols(tree, filePath) {
 /**
  * Extract symbols from Rust files.
  */
-export function extractRustSymbols(tree, filePath) {
+export function extractRustSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -790,7 +958,12 @@ export function extractRustSymbols(tree, filePath) {
           const implType = findCurrentImpl(node);
           const fullName = implType ? `${implType}.${nameNode.text}` : nameNode.text;
           const kind = implType ? 'method' : 'function';
-          definitions.push({ name: fullName, kind, line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind,
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -798,7 +971,12 @@ export function extractRustSymbols(tree, filePath) {
       case 'struct_item': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -806,7 +984,12 @@ export function extractRustSymbols(tree, filePath) {
       case 'enum_item': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -814,15 +997,28 @@ export function extractRustSymbols(tree, filePath) {
       case 'trait_item': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           const body = node.childForFieldName('body');
           if (body) {
             for (let i = 0; i < body.childCount; i++) {
               const child = body.child(i);
-              if (child && (child.type === 'function_signature_item' || child.type === 'function_item')) {
+              if (
+                child &&
+                (child.type === 'function_signature_item' || child.type === 'function_item')
+              ) {
                 const methName = child.childForFieldName('name');
                 if (methName) {
-                  definitions.push({ name: `${nameNode.text}.${methName.text}`, kind: 'method', line: child.startPosition.row + 1, endLine: child.endPosition.row + 1 });
+                  definitions.push({
+                    name: `${nameNode.text}.${methName.text}`,
+                    kind: 'method',
+                    line: child.startPosition.row + 1,
+                    endLine: child.endPosition.row + 1,
+                  });
                 }
               }
             }
@@ -835,7 +1031,11 @@ export function extractRustSymbols(tree, filePath) {
         const typeNode = node.childForFieldName('type');
         const traitNode = node.childForFieldName('trait');
         if (typeNode && traitNode) {
-          classes.push({ name: typeNode.text, implements: traitNode.text, line: node.startPosition.row + 1 });
+          classes.push({
+            name: typeNode.text,
+            implements: traitNode.text,
+            line: node.startPosition.row + 1,
+          });
         }
         break;
       }
@@ -845,7 +1045,12 @@ export function extractRustSymbols(tree, filePath) {
         if (argNode) {
           const usePaths = extractRustUsePath(argNode);
           for (const imp of usePaths) {
-            imports.push({ source: imp.source, names: imp.names, line: node.startPosition.row + 1, rustUse: true });
+            imports.push({
+              source: imp.source,
+              names: imp.names,
+              line: node.startPosition.row + 1,
+              rustUse: true,
+            });
           }
         }
         break;
@@ -870,7 +1075,7 @@ export function extractRustSymbols(tree, filePath) {
       case 'macro_invocation': {
         const macroNode = node.child(0);
         if (macroNode) {
-          calls.push({ name: macroNode.text + '!', line: node.startPosition.row + 1 });
+          calls.push({ name: `${macroNode.text}!`, line: node.startPosition.row + 1 });
         }
         break;
       }
@@ -902,10 +1107,14 @@ function extractRustUsePath(node) {
       const names = [];
       for (let i = 0; i < listNode.childCount; i++) {
         const child = listNode.child(i);
-        if (child && (child.type === 'identifier' || child.type === 'use_as_clause' || child.type === 'self')) {
-          const name = child.type === 'use_as_clause'
-            ? (child.childForFieldName('alias') || child.childForFieldName('name'))?.text
-            : child.text;
+        if (
+          child &&
+          (child.type === 'identifier' || child.type === 'use_as_clause' || child.type === 'self')
+        ) {
+          const name =
+            child.type === 'use_as_clause'
+              ? (child.childForFieldName('alias') || child.childForFieldName('name'))?.text
+              : child.text;
           if (name) names.push(name);
         }
       }
@@ -936,7 +1145,7 @@ function extractRustUsePath(node) {
 /**
  * Extract symbols from Java files.
  */
-export function extractJavaSymbols(tree, filePath) {
+export function extractJavaSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -946,7 +1155,11 @@ export function extractJavaSymbols(tree, filePath) {
   function findJavaParentClass(node) {
     let current = node.parent;
     while (current) {
-      if (current.type === 'class_declaration' || current.type === 'enum_declaration' || current.type === 'interface_declaration') {
+      if (
+        current.type === 'class_declaration' ||
+        current.type === 'enum_declaration' ||
+        current.type === 'interface_declaration'
+      ) {
         const nameNode = current.childForFieldName('name');
         return nameNode ? nameNode.text : null;
       }
@@ -960,15 +1173,30 @@ export function extractJavaSymbols(tree, filePath) {
       case 'class_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
 
           const superclass = node.childForFieldName('superclass');
           if (superclass) {
             for (let i = 0; i < superclass.childCount; i++) {
               const child = superclass.child(i);
-              if (child && (child.type === 'type_identifier' || child.type === 'identifier' || child.type === 'generic_type')) {
+              if (
+                child &&
+                (child.type === 'type_identifier' ||
+                  child.type === 'identifier' ||
+                  child.type === 'generic_type')
+              ) {
                 const superName = child.type === 'generic_type' ? child.child(0)?.text : child.text;
-                if (superName) classes.push({ name: nameNode.text, extends: superName, line: node.startPosition.row + 1 });
+                if (superName)
+                  classes.push({
+                    name: nameNode.text,
+                    extends: superName,
+                    line: node.startPosition.row + 1,
+                  });
                 break;
               }
             }
@@ -978,18 +1206,40 @@ export function extractJavaSymbols(tree, filePath) {
           if (interfaces) {
             for (let i = 0; i < interfaces.childCount; i++) {
               const child = interfaces.child(i);
-              if (child && (child.type === 'type_identifier' || child.type === 'identifier' || child.type === 'type_list' || child.type === 'generic_type')) {
+              if (
+                child &&
+                (child.type === 'type_identifier' ||
+                  child.type === 'identifier' ||
+                  child.type === 'type_list' ||
+                  child.type === 'generic_type')
+              ) {
                 if (child.type === 'type_list') {
                   for (let j = 0; j < child.childCount; j++) {
                     const t = child.child(j);
-                    if (t && (t.type === 'type_identifier' || t.type === 'identifier' || t.type === 'generic_type')) {
+                    if (
+                      t &&
+                      (t.type === 'type_identifier' ||
+                        t.type === 'identifier' ||
+                        t.type === 'generic_type')
+                    ) {
                       const ifaceName = t.type === 'generic_type' ? t.child(0)?.text : t.text;
-                      if (ifaceName) classes.push({ name: nameNode.text, implements: ifaceName, line: node.startPosition.row + 1 });
+                      if (ifaceName)
+                        classes.push({
+                          name: nameNode.text,
+                          implements: ifaceName,
+                          line: node.startPosition.row + 1,
+                        });
                     }
                   }
                 } else {
-                  const ifaceName = child.type === 'generic_type' ? child.child(0)?.text : child.text;
-                  if (ifaceName) classes.push({ name: nameNode.text, implements: ifaceName, line: node.startPosition.row + 1 });
+                  const ifaceName =
+                    child.type === 'generic_type' ? child.child(0)?.text : child.text;
+                  if (ifaceName)
+                    classes.push({
+                      name: nameNode.text,
+                      implements: ifaceName,
+                      line: node.startPosition.row + 1,
+                    });
                 }
               }
             }
@@ -1001,7 +1251,12 @@ export function extractJavaSymbols(tree, filePath) {
       case 'interface_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           const body = node.childForFieldName('body');
           if (body) {
             for (let i = 0; i < body.childCount; i++) {
@@ -1009,7 +1264,12 @@ export function extractJavaSymbols(tree, filePath) {
               if (child && child.type === 'method_declaration') {
                 const methName = child.childForFieldName('name');
                 if (methName) {
-                  definitions.push({ name: `${nameNode.text}.${methName.text}`, kind: 'method', line: child.startPosition.row + 1, endLine: child.endPosition.row + 1 });
+                  definitions.push({
+                    name: `${nameNode.text}.${methName.text}`,
+                    kind: 'method',
+                    line: child.startPosition.row + 1,
+                    endLine: child.endPosition.row + 1,
+                  });
                 }
               }
             }
@@ -1021,7 +1281,12 @@ export function extractJavaSymbols(tree, filePath) {
       case 'enum_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1031,7 +1296,12 @@ export function extractJavaSymbols(tree, filePath) {
         if (nameNode) {
           const parentClass = findJavaParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1041,7 +1311,12 @@ export function extractJavaSymbols(tree, filePath) {
         if (nameNode) {
           const parentClass = findJavaParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1052,7 +1327,12 @@ export function extractJavaSymbols(tree, filePath) {
           if (child && (child.type === 'scoped_identifier' || child.type === 'identifier')) {
             const fullPath = child.text;
             const lastName = fullPath.split('.').pop();
-            imports.push({ source: fullPath, names: [lastName], line: node.startPosition.row + 1, javaImport: true });
+            imports.push({
+              source: fullPath,
+              names: [lastName],
+              line: node.startPosition.row + 1,
+              javaImport: true,
+            });
           }
           if (child && child.type === 'asterisk') {
             const lastImport = imports[imports.length - 1];
@@ -1073,7 +1353,8 @@ export function extractJavaSymbols(tree, filePath) {
       case 'object_creation_expression': {
         const typeNode = node.childForFieldName('type');
         if (typeNode) {
-          const typeName = typeNode.type === 'generic_type' ? typeNode.child(0)?.text : typeNode.text;
+          const typeName =
+            typeNode.type === 'generic_type' ? typeNode.child(0)?.text : typeNode.text;
           if (typeName) calls.push({ name: typeName, line: node.startPosition.row + 1 });
         }
         break;
@@ -1090,7 +1371,7 @@ export function extractJavaSymbols(tree, filePath) {
 /**
  * Extract symbols from C# files.
  */
-export function extractCSharpSymbols(tree, filePath) {
+export function extractCSharpSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -1100,9 +1381,13 @@ export function extractCSharpSymbols(tree, filePath) {
   function findCSharpParentType(node) {
     let current = node.parent;
     while (current) {
-      if (current.type === 'class_declaration' || current.type === 'struct_declaration' ||
-          current.type === 'interface_declaration' || current.type === 'enum_declaration' ||
-          current.type === 'record_declaration') {
+      if (
+        current.type === 'class_declaration' ||
+        current.type === 'struct_declaration' ||
+        current.type === 'interface_declaration' ||
+        current.type === 'enum_declaration' ||
+        current.type === 'record_declaration'
+      ) {
         const nameNode = current.childForFieldName('name');
         return nameNode ? nameNode.text : null;
       }
@@ -1116,7 +1401,12 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'class_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           extractCSharpBaseTypes(node, nameNode.text, classes);
         }
         break;
@@ -1125,7 +1415,12 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'struct_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           extractCSharpBaseTypes(node, nameNode.text, classes);
         }
         break;
@@ -1134,7 +1429,12 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'record_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           extractCSharpBaseTypes(node, nameNode.text, classes);
         }
         break;
@@ -1143,7 +1443,12 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'interface_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           const body = node.childForFieldName('body');
           if (body) {
             for (let i = 0; i < body.childCount; i++) {
@@ -1151,7 +1456,12 @@ export function extractCSharpSymbols(tree, filePath) {
               if (child && child.type === 'method_declaration') {
                 const methName = child.childForFieldName('name');
                 if (methName) {
-                  definitions.push({ name: `${nameNode.text}.${methName.text}`, kind: 'method', line: child.startPosition.row + 1, endLine: child.endPosition.row + 1 });
+                  definitions.push({
+                    name: `${nameNode.text}.${methName.text}`,
+                    kind: 'method',
+                    line: child.startPosition.row + 1,
+                    endLine: child.endPosition.row + 1,
+                  });
                 }
               }
             }
@@ -1163,7 +1473,12 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'enum_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1173,7 +1488,12 @@ export function extractCSharpSymbols(tree, filePath) {
         if (nameNode) {
           const parentType = findCSharpParentType(node);
           const fullName = parentType ? `${parentType}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1183,7 +1503,12 @@ export function extractCSharpSymbols(tree, filePath) {
         if (nameNode) {
           const parentType = findCSharpParentType(node);
           const fullName = parentType ? `${parentType}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1193,18 +1518,31 @@ export function extractCSharpSymbols(tree, filePath) {
         if (nameNode) {
           const parentType = findCSharpParentType(node);
           const fullName = parentType ? `${parentType}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
 
       case 'using_directive': {
         // using System.Collections.Generic;
-        const nameNode = node.childForFieldName('name') || findChild(node, 'qualified_name') || findChild(node, 'identifier');
+        const nameNode =
+          node.childForFieldName('name') ||
+          findChild(node, 'qualified_name') ||
+          findChild(node, 'identifier');
         if (nameNode) {
           const fullPath = nameNode.text;
           const lastName = fullPath.split('.').pop();
-          imports.push({ source: fullPath, names: [lastName], line: node.startPosition.row + 1, csharpUsing: true });
+          imports.push({
+            source: fullPath,
+            names: [lastName],
+            line: node.startPosition.row + 1,
+            csharpUsing: true,
+          });
         }
         break;
       }
@@ -1228,7 +1566,10 @@ export function extractCSharpSymbols(tree, filePath) {
       case 'object_creation_expression': {
         const typeNode = node.childForFieldName('type');
         if (typeNode) {
-          const typeName = typeNode.type === 'generic_name' ? typeNode.childForFieldName('name')?.text || typeNode.child(0)?.text : typeNode.text;
+          const typeName =
+            typeNode.type === 'generic_name'
+              ? typeNode.childForFieldName('name')?.text || typeNode.child(0)?.text
+              : typeNode.text;
           if (typeName) calls.push({ name: typeName, line: node.startPosition.row + 1 });
         }
         break;
@@ -1252,7 +1593,8 @@ function extractCSharpBaseTypes(node, className, classes) {
       classes.push({ name: className, extends: child.text, line: node.startPosition.row + 1 });
     } else if (child.type === 'generic_name') {
       const name = child.childForFieldName('name') || child.child(0);
-      if (name) classes.push({ name: className, extends: name.text, line: node.startPosition.row + 1 });
+      if (name)
+        classes.push({ name: className, extends: name.text, line: node.startPosition.row + 1 });
     } else if (child.type === 'base_list') {
       for (let j = 0; j < child.childCount; j++) {
         const base = child.child(j);
@@ -1260,7 +1602,8 @@ function extractCSharpBaseTypes(node, className, classes) {
           classes.push({ name: className, extends: base.text, line: node.startPosition.row + 1 });
         } else if (base && base.type === 'generic_name') {
           const name = base.childForFieldName('name') || base.child(0);
-          if (name) classes.push({ name: className, extends: name.text, line: node.startPosition.row + 1 });
+          if (name)
+            classes.push({ name: className, extends: name.text, line: node.startPosition.row + 1 });
         }
       }
     }
@@ -1270,7 +1613,7 @@ function extractCSharpBaseTypes(node, className, classes) {
 /**
  * Extract symbols from Ruby files.
  */
-export function extractRubySymbols(tree, filePath) {
+export function extractRubySymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -1298,14 +1641,23 @@ export function extractRubySymbols(tree, filePath) {
       case 'class': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           const superclass = node.childForFieldName('superclass');
           if (superclass) {
             // superclass wraps the < token and class name
             for (let i = 0; i < superclass.childCount; i++) {
               const child = superclass.child(i);
               if (child && (child.type === 'constant' || child.type === 'scope_resolution')) {
-                classes.push({ name: nameNode.text, extends: child.text, line: node.startPosition.row + 1 });
+                classes.push({
+                  name: nameNode.text,
+                  extends: child.text,
+                  line: node.startPosition.row + 1,
+                });
                 break;
               }
             }
@@ -1314,7 +1666,11 @@ export function extractRubySymbols(tree, filePath) {
               for (let i = 0; i < superclass.childCount; i++) {
                 const child = superclass.child(i);
                 if (child && (child.type === 'constant' || child.type === 'scope_resolution')) {
-                  classes.push({ name: nameNode.text, extends: child.text, line: node.startPosition.row + 1 });
+                  classes.push({
+                    name: nameNode.text,
+                    extends: child.text,
+                    line: node.startPosition.row + 1,
+                  });
                   break;
                 }
               }
@@ -1327,7 +1683,12 @@ export function extractRubySymbols(tree, filePath) {
       case 'module': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1337,7 +1698,12 @@ export function extractRubySymbols(tree, filePath) {
         if (nameNode) {
           const parentClass = findRubyParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1347,7 +1713,12 @@ export function extractRubySymbols(tree, filePath) {
         if (nameNode) {
           const parentClass = findRubyParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'function', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'function',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1363,20 +1734,34 @@ export function extractRubySymbols(tree, filePath) {
                 const arg = args.child(i);
                 if (arg && (arg.type === 'string' || arg.type === 'string_content')) {
                   const strContent = arg.text.replace(/^['"]|['"]$/g, '');
-                  imports.push({ source: strContent, names: [strContent.split('/').pop()], line: node.startPosition.row + 1, rubyRequire: true });
+                  imports.push({
+                    source: strContent,
+                    names: [strContent.split('/').pop()],
+                    line: node.startPosition.row + 1,
+                    rubyRequire: true,
+                  });
                   break;
                 }
                 // Look inside string for string_content
                 if (arg && arg.type === 'string') {
                   const content = findChild(arg, 'string_content');
                   if (content) {
-                    imports.push({ source: content.text, names: [content.text.split('/').pop()], line: node.startPosition.row + 1, rubyRequire: true });
+                    imports.push({
+                      source: content.text,
+                      names: [content.text.split('/').pop()],
+                      line: node.startPosition.row + 1,
+                      rubyRequire: true,
+                    });
                     break;
                   }
                 }
               }
             }
-          } else if (methodNode.text === 'include' || methodNode.text === 'extend' || methodNode.text === 'prepend') {
+          } else if (
+            methodNode.text === 'include' ||
+            methodNode.text === 'extend' ||
+            methodNode.text === 'prepend'
+          ) {
             // Module inclusion — treated like implements
             const parentClass = findRubyParentClass(node);
             if (parentClass) {
@@ -1385,7 +1770,11 @@ export function extractRubySymbols(tree, filePath) {
                 for (let i = 0; i < args.childCount; i++) {
                   const arg = args.child(i);
                   if (arg && (arg.type === 'constant' || arg.type === 'scope_resolution')) {
-                    classes.push({ name: parentClass, implements: arg.text, line: node.startPosition.row + 1 });
+                    classes.push({
+                      name: parentClass,
+                      implements: arg.text,
+                      line: node.startPosition.row + 1,
+                    });
                   }
                 }
               }
@@ -1408,7 +1797,7 @@ export function extractRubySymbols(tree, filePath) {
 /**
  * Extract symbols from PHP files.
  */
-export function extractPHPSymbols(tree, filePath) {
+export function extractPHPSymbols(tree, _filePath) {
   const definitions = [];
   const calls = [];
   const imports = [];
@@ -1418,7 +1807,11 @@ export function extractPHPSymbols(tree, filePath) {
   function findPHPParentClass(node) {
     let current = node.parent;
     while (current) {
-      if (current.type === 'class_declaration' || current.type === 'trait_declaration' || current.type === 'enum_declaration') {
+      if (
+        current.type === 'class_declaration' ||
+        current.type === 'trait_declaration' ||
+        current.type === 'enum_declaration'
+      ) {
         const nameNode = current.childForFieldName('name');
         return nameNode ? nameNode.text : null;
       }
@@ -1432,7 +1825,12 @@ export function extractPHPSymbols(tree, filePath) {
       case 'function_definition': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'function', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'function',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1440,15 +1838,25 @@ export function extractPHPSymbols(tree, filePath) {
       case 'class_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
 
           // Check base clause (extends)
-          const baseClause = node.childForFieldName('base_clause') || findChild(node, 'base_clause');
+          const baseClause =
+            node.childForFieldName('base_clause') || findChild(node, 'base_clause');
           if (baseClause) {
             for (let i = 0; i < baseClause.childCount; i++) {
               const child = baseClause.child(i);
               if (child && (child.type === 'name' || child.type === 'qualified_name')) {
-                classes.push({ name: nameNode.text, extends: child.text, line: node.startPosition.row + 1 });
+                classes.push({
+                  name: nameNode.text,
+                  extends: child.text,
+                  line: node.startPosition.row + 1,
+                });
                 break;
               }
             }
@@ -1460,7 +1868,11 @@ export function extractPHPSymbols(tree, filePath) {
             for (let i = 0; i < interfaceClause.childCount; i++) {
               const child = interfaceClause.child(i);
               if (child && (child.type === 'name' || child.type === 'qualified_name')) {
-                classes.push({ name: nameNode.text, implements: child.text, line: node.startPosition.row + 1 });
+                classes.push({
+                  name: nameNode.text,
+                  implements: child.text,
+                  line: node.startPosition.row + 1,
+                });
               }
             }
           }
@@ -1471,7 +1883,12 @@ export function extractPHPSymbols(tree, filePath) {
       case 'interface_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
           const body = node.childForFieldName('body');
           if (body) {
             for (let i = 0; i < body.childCount; i++) {
@@ -1479,7 +1896,12 @@ export function extractPHPSymbols(tree, filePath) {
               if (child && child.type === 'method_declaration') {
                 const methName = child.childForFieldName('name');
                 if (methName) {
-                  definitions.push({ name: `${nameNode.text}.${methName.text}`, kind: 'method', line: child.startPosition.row + 1, endLine: child.endPosition.row + 1 });
+                  definitions.push({
+                    name: `${nameNode.text}.${methName.text}`,
+                    kind: 'method',
+                    line: child.startPosition.row + 1,
+                    endLine: child.endPosition.row + 1,
+                  });
                 }
               }
             }
@@ -1491,7 +1913,12 @@ export function extractPHPSymbols(tree, filePath) {
       case 'trait_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'interface', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'interface',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1499,7 +1926,12 @@ export function extractPHPSymbols(tree, filePath) {
       case 'enum_declaration': {
         const nameNode = node.childForFieldName('name');
         if (nameNode) {
-          definitions.push({ name: nameNode.text, kind: 'class', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: nameNode.text,
+            kind: 'class',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1509,7 +1941,12 @@ export function extractPHPSymbols(tree, filePath) {
         if (nameNode) {
           const parentClass = findPHPParentClass(node);
           const fullName = parentClass ? `${parentClass}.${nameNode.text}` : nameNode.text;
-          definitions.push({ name: fullName, kind: 'method', line: node.startPosition.row + 1, endLine: nodeEndLine(node) });
+          definitions.push({
+            name: fullName,
+            kind: 'method',
+            line: node.startPosition.row + 1,
+            endLine: nodeEndLine(node),
+          });
         }
         break;
       }
@@ -1524,14 +1961,24 @@ export function extractPHPSymbols(tree, filePath) {
               const fullPath = nameNode.text;
               const lastName = fullPath.split('\\').pop();
               const alias = child.childForFieldName('alias');
-              imports.push({ source: fullPath, names: [alias ? alias.text : lastName], line: node.startPosition.row + 1, phpUse: true });
+              imports.push({
+                source: fullPath,
+                names: [alias ? alias.text : lastName],
+                line: node.startPosition.row + 1,
+                phpUse: true,
+              });
             }
           }
           // Single use clause without wrapper
           if (child && (child.type === 'qualified_name' || child.type === 'name')) {
             const fullPath = child.text;
             const lastName = fullPath.split('\\').pop();
-            imports.push({ source: fullPath, names: [lastName], line: node.startPosition.row + 1, phpUse: true });
+            imports.push({
+              source: fullPath,
+              names: [lastName],
+              line: node.startPosition.row + 1,
+              phpUse: true,
+            });
           }
         }
         break;
@@ -1604,16 +2051,22 @@ function resolveEngine(opts = {}) {
  */
 function normalizeNativeSymbols(result) {
   return {
-    definitions: (result.definitions || []).map(d => ({
-      name: d.name, kind: d.kind, line: d.line,
+    definitions: (result.definitions || []).map((d) => ({
+      name: d.name,
+      kind: d.kind,
+      line: d.line,
       endLine: d.endLine ?? d.end_line ?? null,
-      decorators: d.decorators
+      decorators: d.decorators,
     })),
-    calls: (result.calls || []).map(c => ({
-      name: c.name, line: c.line, dynamic: c.dynamic
+    calls: (result.calls || []).map((c) => ({
+      name: c.name,
+      line: c.line,
+      dynamic: c.dynamic,
     })),
-    imports: (result.imports || []).map(i => ({
-      source: i.source, names: i.names || [], line: i.line,
+    imports: (result.imports || []).map((i) => ({
+      source: i.source,
+      names: i.names || [],
+      line: i.line,
       typeOnly: i.typeOnly ?? i.type_only,
       reexport: i.reexport,
       wildcardReexport: i.wildcardReexport ?? i.wildcard_reexport,
@@ -1623,14 +2076,19 @@ function normalizeNativeSymbols(result) {
       javaImport: i.javaImport ?? i.java_import,
       csharpUsing: i.csharpUsing ?? i.csharp_using,
       rubyRequire: i.rubyRequire ?? i.ruby_require,
-      phpUse: i.phpUse ?? i.php_use
+      phpUse: i.phpUse ?? i.php_use,
     })),
-    classes: (result.classes || []).map(c => ({
-      name: c.name, extends: c.extends, implements: c.implements, line: c.line
+    classes: (result.classes || []).map((c) => ({
+      name: c.name,
+      extends: c.extends,
+      implements: c.implements,
+      line: c.line,
     })),
-    exports: (result.exports || []).map(e => ({
-      name: e.name, kind: e.kind, line: e.line
-    }))
+    exports: (result.exports || []).map((e) => ({
+      name: e.name,
+      kind: e.kind,
+      line: e.line,
+    })),
   };
 }
 
@@ -1642,13 +2100,15 @@ function wasmExtractSymbols(parsers, filePath, code) {
   if (!parser) return null;
 
   let tree;
-  try { tree = parser.parse(code); }
-  catch (e) {
+  try {
+    tree = parser.parse(code);
+  } catch (e) {
     warn(`Parse error in ${filePath}: ${e.message}`);
     return null;
   }
 
-  if (filePath.endsWith('.tf') || filePath.endsWith('.hcl')) return extractHCLSymbols(tree, filePath);
+  if (filePath.endsWith('.tf') || filePath.endsWith('.hcl'))
+    return extractHCLSymbols(tree, filePath);
   if (filePath.endsWith('.py')) return extractPythonSymbols(tree, filePath);
   if (filePath.endsWith('.go')) return extractGoSymbols(tree, filePath);
   if (filePath.endsWith('.rs')) return extractRustSymbols(tree, filePath);
@@ -1668,7 +2128,7 @@ function wasmExtractSymbols(parsers, filePath, code) {
  * @returns {Promise<{definitions, calls, imports, classes, exports}|null>}
  */
 export async function parseFileAuto(filePath, source, opts = {}) {
-  const { name, native } = resolveEngine(opts);
+  const { native } = resolveEngine(opts);
 
   if (native) {
     const result = native.parseFile(filePath, source);
@@ -1689,7 +2149,7 @@ export async function parseFileAuto(filePath, source, opts = {}) {
  * @returns {Promise<Map<string, {definitions, calls, imports, classes, exports}>>}
  */
 export async function parseFilesAuto(filePaths, rootDir, opts = {}) {
-  const { name, native } = resolveEngine(opts);
+  const { native } = resolveEngine(opts);
   const result = new Map();
 
   if (native) {
@@ -1706,8 +2166,9 @@ export async function parseFilesAuto(filePaths, rootDir, opts = {}) {
   const parsers = await createParsers();
   for (const filePath of filePaths) {
     let code;
-    try { code = fs.readFileSync(filePath, 'utf-8'); }
-    catch (err) {
+    try {
+      code = fs.readFileSync(filePath, 'utf-8');
+    } catch (err) {
       warn(`Skipping ${path.relative(rootDir, filePath)}: ${err.message}`);
       continue;
     }
@@ -1728,7 +2189,11 @@ export async function parseFilesAuto(filePaths, rootDir, opts = {}) {
  */
 export function getActiveEngine(opts = {}) {
   const { name, native } = resolveEngine(opts);
-  const version = native ? (typeof native.engineVersion === 'function' ? native.engineVersion() : null) : null;
+  const version = native
+    ? typeof native.engineVersion === 'function'
+      ? native.engineVersion()
+      : null
+    : null;
   return { name, version };
 }
 

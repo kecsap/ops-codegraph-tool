@@ -5,8 +5,8 @@
  * Run: npm install
  * Then: npm test
  */
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createParsers, getParser, extractSymbols } from '../../src/parser.js';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { createParsers, extractSymbols } from '../../src/parser.js';
 
 describe('JavaScript parser', () => {
   let parsers;
@@ -24,24 +24,24 @@ describe('JavaScript parser', () => {
   it('extracts named function declarations', () => {
     const symbols = parseJS(`function greet(name) { return "hello " + name; }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'greet', kind: 'function', line: 1 })
+      expect.objectContaining({ name: 'greet', kind: 'function', line: 1 }),
     );
   });
 
   it('extracts arrow function assignments', () => {
     const symbols = parseJS(`const add = (a, b) => a + b;`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'add', kind: 'function' })
+      expect.objectContaining({ name: 'add', kind: 'function' }),
     );
   });
 
   it('extracts class declarations', () => {
     const symbols = parseJS(`class Foo { bar() {} }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo', kind: 'class' })
+      expect.objectContaining({ name: 'Foo', kind: 'class' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Foo.bar', kind: 'method' })
+      expect.objectContaining({ name: 'Foo.bar', kind: 'method' }),
     );
   });
 
@@ -55,12 +55,8 @@ describe('JavaScript parser', () => {
 
   it('extracts call expressions', () => {
     const symbols = parseJS(`import { foo } from './bar'; foo(); baz();`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'foo' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'baz' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'foo' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'baz' }));
   });
 
   it('handles re-exports from barrel files', () => {
@@ -71,7 +67,7 @@ describe('JavaScript parser', () => {
 
   it('detects dynamic call patterns', () => {
     const symbols = parseJS(`fn.call(null, arg); obj.apply(undefined, args);`);
-    const dynamicCalls = symbols.calls.filter(c => c.dynamic);
+    const dynamicCalls = symbols.calls.filter((c) => c.dynamic);
     expect(dynamicCalls.length).toBeGreaterThanOrEqual(1);
   });
 });

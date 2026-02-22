@@ -1,18 +1,19 @@
 /**
  * Import resolution & confidence parity tests — native vs JS.
  */
-import { describe, it, expect } from 'vitest';
-import path from 'path';
-import os from 'os';
-import fs from 'fs';
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { isNativeAvailable, loadNative } from '../../src/native.js';
 import {
-  resolveImportPath,
   computeConfidence,
-  resolveImportsBatch,
-  resolveImportPathJS,
   computeConfidenceJS,
   convertAliasesForNative,
+  resolveImportPath,
+  resolveImportPathJS,
+  resolveImportsBatch,
 } from '../../src/resolve.js';
 
 const hasNative = isNativeAvailable();
@@ -146,12 +147,10 @@ describe.skipIf(!hasNative)('Import resolution parity', () => {
 
     try {
       const native = loadNative();
-      const jsResult = resolveImportPathJS(
-        path.join(tmpDir, 'app.ts'),
-        './module.js',
-        tmpDir,
-        { baseUrl: null, paths: {} },
-      );
+      const jsResult = resolveImportPathJS(path.join(tmpDir, 'app.ts'), './module.js', tmpDir, {
+        baseUrl: null,
+        paths: {},
+      });
       const nativeResult = native.resolveImport(
         path.join(tmpDir, 'app.ts'),
         './module.js',
@@ -175,12 +174,10 @@ describe.skipIf(!hasNative)('Import resolution parity', () => {
 
     try {
       const native = loadNative();
-      const jsResult = resolveImportPathJS(
-        path.join(tmpDir, 'main.js'),
-        './lib',
-        tmpDir,
-        { baseUrl: null, paths: {} },
-      );
+      const jsResult = resolveImportPathJS(path.join(tmpDir, 'main.js'), './lib', tmpDir, {
+        baseUrl: null,
+        paths: {},
+      });
       const nativeResult = native.resolveImport(
         path.join(tmpDir, 'main.js'),
         './lib',
@@ -267,9 +264,7 @@ describe.skipIf(!hasNative)('Batch import resolution', () => {
   it('returns null when native is unavailable', () => {
     // This test only runs when native IS available, so we can't truly test the null path
     // Instead just verify the map is populated
-    const inputs = [
-      { fromFile: path.join(rootDir, 'index.js'), importSource: './math' },
-    ];
+    const inputs = [{ fromFile: path.join(rootDir, 'index.js'), importSource: './math' }];
     const result = resolveImportsBatch(inputs, rootDir, noAliases);
     expect(result).toBeInstanceOf(Map);
     expect(result.size).toBe(1);
@@ -282,9 +277,7 @@ describe('resolveImportsBatch without native', () => {
   it('returns null gracefully when native not loaded', () => {
     // resolveImportsBatch internally checks loadNative() — when native IS available
     // we can't easily mock it, but we test the API contract
-    const inputs = [
-      { fromFile: path.join(FIXTURE_DIR, 'index.js'), importSource: './math' },
-    ];
+    const inputs = [{ fromFile: path.join(FIXTURE_DIR, 'index.js'), importSource: './math' }];
     const result = resolveImportsBatch(inputs, FIXTURE_DIR, { baseUrl: null, paths: {} });
     if (!hasNative) {
       expect(result).toBeNull();

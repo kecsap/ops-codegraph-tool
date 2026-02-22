@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createParsers, extractGoSymbols } from '../../src/parser.js';
 
 describe('Go parser', () => {
@@ -16,9 +16,11 @@ describe('Go parser', () => {
   }
 
   it('extracts function declarations', () => {
-    const symbols = parseGo(`package main\nfunc greet(name string) string { return "hello " + name }`);
+    const symbols = parseGo(
+      `package main\nfunc greet(name string) string { return "hello " + name }`,
+    );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'greet', kind: 'function', line: 2 })
+      expect.objectContaining({ name: 'greet', kind: 'function', line: 2 }),
     );
   });
 
@@ -28,17 +30,17 @@ type Server struct {}
 func (s *Server) Start() error { return nil }
 func (s Server) Name() string { return "" }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Server.Start', kind: 'method' })
+      expect.objectContaining({ name: 'Server.Start', kind: 'method' }),
     );
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Server.Name', kind: 'method' })
+      expect.objectContaining({ name: 'Server.Name', kind: 'method' }),
     );
   });
 
   it('extracts struct types as class kind', () => {
     const symbols = parseGo(`package main\ntype User struct { Name string; Age int }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'User', kind: 'class' })
+      expect.objectContaining({ name: 'User', kind: 'class' }),
     );
   });
 
@@ -48,21 +50,21 @@ type Reader interface {
   Read(p []byte) (n int, err error)
 }`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'Reader', kind: 'interface' })
+      expect.objectContaining({ name: 'Reader', kind: 'interface' }),
     );
   });
 
   it('extracts type aliases', () => {
     const symbols = parseGo(`package main\ntype ID string`);
     expect(symbols.definitions).toContainEqual(
-      expect.objectContaining({ name: 'ID', kind: 'type' })
+      expect.objectContaining({ name: 'ID', kind: 'type' }),
     );
   });
 
   it('extracts single imports', () => {
     const symbols = parseGo(`package main\nimport "fmt"`);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'fmt', names: ['fmt'] })
+      expect.objectContaining({ source: 'fmt', names: ['fmt'] }),
     );
   });
 
@@ -75,14 +77,14 @@ import (
 )`);
     expect(symbols.imports).toHaveLength(3);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'net/http', names: ['http'] })
+      expect.objectContaining({ source: 'net/http', names: ['http'] }),
     );
   });
 
   it('extracts aliased imports', () => {
     const symbols = parseGo(`package main\nimport myfmt "fmt"`);
     expect(symbols.imports).toContainEqual(
-      expect.objectContaining({ source: 'fmt', names: ['myfmt'] })
+      expect.objectContaining({ source: 'fmt', names: ['myfmt'] }),
     );
   });
 
@@ -90,11 +92,7 @@ import (
     const symbols = parseGo(`package main
 import "fmt"
 func main() { fmt.Println("hello"); greet("world") }`);
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'Println' })
-    );
-    expect(symbols.calls).toContainEqual(
-      expect.objectContaining({ name: 'greet' })
-    );
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'Println' }));
+    expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'greet' }));
   });
 });

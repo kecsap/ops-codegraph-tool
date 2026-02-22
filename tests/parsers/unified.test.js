@@ -3,12 +3,12 @@
  *
  * These tests always work: when native is unavailable they exercise the WASM fallback.
  */
-import { describe, it, expect } from 'vitest';
-import path from 'path';
-import { parseFileAuto, parseFilesAuto, getActiveEngine } from '../../src/parser.js';
+
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { getActiveEngine, parseFileAuto, parseFilesAuto } from '../../src/parser.js';
 
 describe('Unified parser API', () => {
-
   describe('getActiveEngine', () => {
     it('returns an object with name and version', () => {
       const engine = getActiveEngine();
@@ -26,10 +26,13 @@ describe('Unified parser API', () => {
 
   describe('parseFileAuto', () => {
     it('parses a simple JS function declaration', async () => {
-      const symbols = await parseFileAuto('test.js', 'function greet(name) { return "hello " + name; }');
+      const symbols = await parseFileAuto(
+        'test.js',
+        'function greet(name) { return "hello " + name; }',
+      );
       expect(symbols).not.toBeNull();
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'greet', kind: 'function', line: 1 })
+        expect.objectContaining({ name: 'greet', kind: 'function', line: 1 }),
       );
     });
 
@@ -37,7 +40,7 @@ describe('Unified parser API', () => {
       const symbols = await parseFileAuto('test.js', 'const add = (a, b) => a + b;');
       expect(symbols).not.toBeNull();
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'add', kind: 'function' })
+        expect.objectContaining({ name: 'add', kind: 'function' }),
       );
     });
 
@@ -52,19 +55,17 @@ describe('Unified parser API', () => {
     it('extracts call expressions', async () => {
       const symbols = await parseFileAuto('test.js', 'function f() { g(); }');
       expect(symbols).not.toBeNull();
-      expect(symbols.calls).toContainEqual(
-        expect.objectContaining({ name: 'g' })
-      );
+      expect(symbols.calls).toContainEqual(expect.objectContaining({ name: 'g' }));
     });
 
     it('extracts classes', async () => {
       const symbols = await parseFileAuto('test.js', 'class Foo extends Bar { baz() {} }');
       expect(symbols).not.toBeNull();
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'Foo', kind: 'class' })
+        expect.objectContaining({ name: 'Foo', kind: 'class' }),
       );
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'Foo.baz', kind: 'method' })
+        expect.objectContaining({ name: 'Foo.baz', kind: 'method' }),
       );
     });
 
@@ -87,7 +88,7 @@ describe('Unified parser API', () => {
       const symbols = await parseFileAuto('test.js', 'function hello() {}', { engine: 'wasm' });
       expect(symbols).not.toBeNull();
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'hello', kind: 'function' })
+        expect.objectContaining({ name: 'hello', kind: 'function' }),
       );
     });
 
@@ -95,7 +96,7 @@ describe('Unified parser API', () => {
       const symbols = await parseFileAuto('test.py', 'def greet():\n    pass', { engine: 'wasm' });
       expect(symbols).not.toBeNull();
       expect(symbols.definitions).toContainEqual(
-        expect.objectContaining({ name: 'greet', kind: 'function' })
+        expect.objectContaining({ name: 'greet', kind: 'function' }),
       );
     });
   });
