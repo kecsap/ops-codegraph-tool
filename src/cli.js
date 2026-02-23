@@ -374,7 +374,7 @@ program
   .action(() => {
     console.log('\nAvailable embedding models:\n');
     for (const [key, config] of Object.entries(MODELS)) {
-      const def = key === 'jina-code' ? ' (default)' : '';
+      const def = key === 'nomic-v1.5' ? ' (default)' : '';
       console.log(`  ${key.padEnd(12)} ${String(config.dim).padStart(4)}d  ${config.desc}${def}`);
     }
     console.log('\nUsage: codegraph embed --model <name>');
@@ -388,8 +388,8 @@ program
   )
   .option(
     '-m, --model <name>',
-    'Embedding model: minilm, jina-small, jina-base, jina-code (default), nomic, nomic-v1.5, bge-large. Run `codegraph models` for details',
-    'jina-code',
+    'Embedding model: minilm, jina-small, jina-base, jina-code, nomic, nomic-v1.5 (default), bge-large. Run `codegraph models` for details',
+    'nomic-v1.5',
   )
   .action(async (dir, opts) => {
     const root = path.resolve(dir || '.');

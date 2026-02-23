@@ -93,7 +93,7 @@ Most code graph tools make you choose: **fast local analysis with no AI, or powe
 | **⚡** | **Always-fresh graph** | Three-tier change detection: journal (O(changed)) → mtime+size (O(n) stats) → hash (O(changed) reads). Sub-second rebuilds even on large codebases. Competitors re-index everything from scratch; Merkle-tree approaches still require O(n) filesystem scanning |
 | **🔓** | **Zero-cost core, LLM-enhanced when you want** | Full graph analysis with no API keys, no accounts, no cost. Optionally bring your own LLM provider for richer embeddings and AI-powered search — your code only goes to the provider you already chose |
 | **🔬** | **Function-level, not just files** | Traces `handleAuth()` → `validateToken()` → `decryptJWT()` and shows 14 callers across 9 files break if `decryptJWT` changes |
-| **🤖** | **Built for AI agents** | 17-tool [MCP server](https://modelcontextprotocol.io/) — AI assistants query your graph directly. Single-repo by default, your code doesn't leak to other projects |
+| **🤖** | **Built for AI agents** | 17-tool [MCP server](https://modelcontextprotocol.io/) with `context` and `explain` compound commands — AI assistants get full function context in one call. Single-repo by default, your code doesn't leak to other projects |
 | **🌐** | **Multi-language, one CLI** | JS/TS + Python + Go + Rust + Java + C# + PHP + Ruby + HCL in a single graph — no juggling Madge, pyan, and cflow |
 | **💥** | **Git diff impact** | `codegraph diff-impact` shows changed functions, their callers, and full blast radius — ships with a GitHub Actions workflow |
 | **🧠** | **Semantic search** | Local embeddings by default, LLM-powered embeddings when opted in — multi-query with RRF ranking via `"auth; token; JWT"` |
@@ -180,12 +180,15 @@ codegraph deps src/index.ts  # file-level import/export map
 
 | | Feature | Description |
 |---|---|---|
-| 🔍 | **Symbol search** | Find any function, class, or method by name with callers/callees |
+| 🔍 | **Symbol search** | Find any function, class, or method by name — exact match priority, relevance scoring, `--file` and `--kind` filters |
 | 📁 | **File dependencies** | See what a file imports and what imports it |
 | 💥 | **Impact analysis** | Trace every file affected by a change (transitive) |
-| 🧬 | **Function-level tracing** | Call chains, caller trees, and function-level impact |
+| 🧬 | **Function-level tracing** | Call chains, caller trees, and function-level impact with qualified call resolution |
+| 🎯 | **Deep context** | `context` gives AI agents source, deps, callers, signature, and tests for a function in one call; `explain` gives structural summaries of files or functions |
+| 📍 | **Fast lookup** | `where` shows exactly where a symbol is defined and used — minimal, fast |
 | 📊 | **Diff impact** | Parse `git diff`, find overlapping functions, trace their callers |
 | 🗺️ | **Module map** | Bird's-eye view of your most-connected files |
+| 🏗️ | **Structure & hotspots** | Directory cohesion scores, fan-in/fan-out hotspot detection, module boundaries |
 | 🔄 | **Cycle detection** | Find circular dependencies at file or function level |
 | 📤 | **Export** | DOT (Graphviz), Mermaid, and JSON graph export |
 | 🧠 | **Semantic search** | Embeddings-powered natural language search with multi-query RRF ranking |
@@ -210,7 +213,19 @@ codegraph watch [dir]          # Watch for changes, update graph incrementally
 codegraph query <name>         # Find a symbol — shows callers and callees
 codegraph deps <file>          # File imports/exports
 codegraph map                  # Top 20 most-connected files
-codegraph map -n 50            # Top 50
+codegraph map -n 50 --no-tests # Top 50, excluding test files
+codegraph where <name>         # Where is a symbol defined and used?
+codegraph where --file src/db.js  # List symbols, imports, exports for a file
+codegraph stats                # Graph health: nodes, edges, languages, quality score
+```
+
+### Deep Context (AI-Optimized)
+
+```bash
+codegraph context <name>       # Full context: source, deps, callers, signature, tests
+codegraph context <name> --depth 2 --no-tests  # Include callee source 2 levels deep
+codegraph explain <file>       # Structural summary: public API, internals, data flow
+codegraph explain <function>   # Function summary: signature, calls, callers, tests
 ```
 
 ### Impact Analysis
@@ -223,6 +238,14 @@ codegraph fn-impact <name>     # What functions break if this one changes
 codegraph diff-impact          # Impact of unstaged git changes
 codegraph diff-impact --staged # Impact of staged changes
 codegraph diff-impact HEAD~3   # Impact vs a specific ref
+```
+
+### Structure & Hotspots
+
+```bash
+codegraph structure            # Directory overview with cohesion scores
+codegraph hotspots             # Files with extreme fan-in, fan-out, or density
+codegraph hotspots --metric coupling --level directory --no-tests
 ```
 
 ### Export & Visualization
@@ -268,9 +291,9 @@ A single trailing semicolon is ignored (falls back to single-query mode). The `-
 | `minilm` | all-MiniLM-L6-v2 | 384 | ~23 MB | Apache-2.0 | Fastest, good for quick iteration |
 | `jina-small` | jina-embeddings-v2-small-en | 512 | ~33 MB | Apache-2.0 | Better quality, still small |
 | `jina-base` | jina-embeddings-v2-base-en | 768 | ~137 MB | Apache-2.0 | High quality, 8192 token context |
-| `jina-code` (default) | jina-embeddings-v2-base-code | 768 | ~137 MB | Apache-2.0 | **Best for code search**, trained on code+text |
+| `jina-code` | jina-embeddings-v2-base-code | 768 | ~137 MB | Apache-2.0 | Best for code search, trained on code+text (requires HF token) |
 | `nomic` | nomic-embed-text-v1 | 768 | ~137 MB | Apache-2.0 | Good quality, 8192 context |
-| `nomic-v1.5` | nomic-embed-text-v1.5 | 768 | ~137 MB | Apache-2.0 | Improved nomic, Matryoshka dimensions |
+| `nomic-v1.5` (default) | nomic-embed-text-v1.5 | 768 | ~137 MB | Apache-2.0 | **Improved nomic, Matryoshka dimensions** |
 | `bge-large` | bge-large-en-v1.5 | 1024 | ~335 MB | MIT | Best general retrieval, top MTEB scores |
 
 The model used during `embed` is stored in the database, so `search` auto-detects it — no need to pass `--model` when searching.
@@ -304,13 +327,13 @@ By default, the MCP server only exposes the local project's graph. AI agents can
 | Flag | Description |
 |---|---|
 | `-d, --db <path>` | Custom path to `graph.db` |
-| `-T, --no-tests` | Exclude `.test.`, `.spec.`, `__test__` files |
+| `-T, --no-tests` | Exclude `.test.`, `.spec.`, `__test__` files (available on `fn`, `fn-impact`, `context`, `explain`, `where`, `diff-impact`, `search`, `map`, `hotspots`, `deps`, `impact`) |
 | `--depth <n>` | Transitive trace depth (default varies by command) |
 | `-j, --json` | Output as JSON |
 | `-v, --verbose` | Enable debug output |
 | `--engine <engine>` | Parser engine: `native`, `wasm`, or `auto` (default: `auto`) |
-| `-k, --kind <kind>` | Filter by kind: `function`, `method`, `class`, `struct`, `enum`, `trait`, `record`, `module` (search) |
-| `--file <pattern>` | Filter by file path pattern (search) |
+| `-k, --kind <kind>` | Filter by kind: `function`, `method`, `class`, `struct`, `enum`, `trait`, `record`, `module` (`fn`, `context`, `search`) |
+| `-f, --file <path>` | Scope to a specific file (`fn`, `context`, `where`) |
 | `--rrf-k <n>` | RRF smoothing constant for multi-query search (default 60) |
 
 ## 🌐 Language Support
@@ -361,18 +384,19 @@ Both engines produce identical output. Use `--engine native|wasm|auto` to contro
 
 ### Call Resolution
 
-Calls are resolved with priority and confidence scoring:
+Calls are resolved with **qualified resolution** — method calls (`obj.method()`) are distinguished from standalone function calls, and built-in receivers (`console`, `Math`, `JSON`, `Array`, `Promise`, etc.) are filtered out automatically. Import scope is respected: a call to `foo()` only resolves to functions that are actually imported or defined in the same file, eliminating false positives from name collisions.
 
 | Priority | Source | Confidence |
 |---|---|---|
 | 1 | **Import-aware** — `import { foo } from './bar'` → link to `bar` | `1.0` |
 | 2 | **Same-file** — definitions in the current file | `1.0` |
-| 3 | **Same directory** — definitions in sibling files | `0.7` |
-| 4 | **Same parent directory** — definitions in sibling dirs | `0.5` |
-| 5 | **Global fallback** — match by name across codebase | `0.3` |
-| 6 | **Method hierarchy** — resolved through `extends`/`implements` | — |
+| 3 | **Same directory** — definitions in sibling files (standalone calls only) | `0.7` |
+| 4 | **Same parent directory** — definitions in sibling dirs (standalone calls only) | `0.5` |
+| 5 | **Method hierarchy** — resolved through `extends`/`implements` | varies |
 
-Dynamic patterns like `fn.call()`, `fn.apply()`, `fn.bind()`, and `obj["method"]()` are also detected on a best-effort basis.
+Method calls on unknown receivers skip global fallback entirely — `stmt.run()` will never resolve to a standalone `run` function in another file. Duplicate caller/callee edges are deduplicated automatically. Dynamic patterns like `fn.call()`, `fn.apply()`, `fn.bind()`, and `obj["method"]()` are also detected on a best-effort basis.
+
+Codegraph also extracts symbols from common callback patterns: Commander `.command().action()` callbacks (as `command:build`), Express route handlers (as `route:GET /api/users`), and event emitter listeners (as `event:data`).
 
 ## 📊 Performance
 
