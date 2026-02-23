@@ -173,10 +173,10 @@ function initEmbeddingsSchema(db) {
 /**
  * Build embeddings for all functions/methods/classes in the graph.
  */
-export async function buildEmbeddings(rootDir, modelKey) {
+export async function buildEmbeddings(rootDir, modelKey, customDbPath) {
   // path already imported at top
   // fs already imported at top
-  const dbPath = findDbPath(null);
+  const dbPath = customDbPath || findDbPath(null);
 
   const db = new Database(dbPath);
   initEmbeddingsSchema(db);
