@@ -27,12 +27,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { initSchema } from '../../src/db.js';
 import {
   diffImpactData,
+  explainData,
   fileDepsData,
   fnDepsData,
   fnImpactData,
   impactAnalysisData,
   moduleMapData,
   queryNameData,
+  whereData,
 } from '../../src/queries.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────
@@ -43,10 +45,10 @@ function insertNode(db, name, kind, file, line) {
     .run(name, kind, file, line).lastInsertRowid;
 }
 
-function insertEdge(db, sourceId, targetId, kind) {
+function insertEdge(db, sourceId, targetId, kind, confidence = 1.0) {
   db.prepare(
-    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, 1.0, 0)',
-  ).run(sourceId, targetId, kind);
+    'INSERT INTO edges (source_id, target_id, kind, confidence, dynamic) VALUES (?, ?, ?, ?, 0)',
+  ).run(sourceId, targetId, kind, confidence);
 }
 
 // ─── Fixture DB ────────────────────────────────────────────────────────
@@ -74,11 +76,17 @@ beforeAll(() => {
   const authMiddleware = insertNode(db, 'authMiddleware', 'function', 'middleware.js', 5);
   const handleRoute = insertNode(db, 'handleRoute', 'function', 'routes.js', 10);
   const formatResponse = insertNode(db, 'formatResponse', 'function', 'utils.js', 1);
+  const preAuthenticate = insertNode(db, 'preAuthenticate', 'function', 'utils.js', 10);
+
+  // Test file + function
+  const fTest = insertNode(db, 'auth.test.js', 'file', 'auth.test.js', 0);
+  const testAuth = insertNode(db, 'testAuthenticate', 'function', 'auth.test.js', 5);
 
   // Import edges (file → file)
   insertEdge(db, fMw, fAuth, 'imports');
   insertEdge(db, fRoutes, fMw, 'imports');
   insertEdge(db, fRoutes, fUtils, 'imports');
+  insertEdge(db, fTest, fAuth, 'imports');
 
   // Call edges (function → function)
   insertEdge(db, authMiddleware, authenticate, 'calls');
@@ -86,6 +94,10 @@ beforeAll(() => {
   insertEdge(db, handleRoute, authMiddleware, 'calls');
   insertEdge(db, handleRoute, formatResponse, 'calls');
   insertEdge(db, authenticate, validateToken, 'calls');
+  insertEdge(db, handleRoute, preAuthenticate, 'calls');
+  insertEdge(db, testAuth, authenticate, 'calls');
+  // Low-confidence call edge for quality tests
+  insertEdge(db, formatResponse, validateToken, 'calls', 0.3);
 
   db.close();
 });
@@ -128,11 +140,12 @@ describe('impactAnalysisData', () => {
 
     const level1Files = data.levels[1].map((n) => n.file);
     expect(level1Files).toContain('middleware.js');
+    expect(level1Files).toContain('auth.test.js');
 
     const level2Files = data.levels[2].map((n) => n.file);
     expect(level2Files).toContain('routes.js');
 
-    expect(data.totalDependents).toBe(2);
+    expect(data.totalDependents).toBe(3);
   });
 
   test('returns empty for unknown file', () => {
@@ -147,8 +160,8 @@ describe('impactAnalysisData', () => {
 describe('moduleMapData', () => {
   test('returns files with connectivity info', () => {
     const data = moduleMapData(dbPath);
-    expect(data.topNodes.length).toBe(4);
-    expect(data.stats.totalFiles).toBe(4);
+    expect(data.topNodes.length).toBe(5);
+    expect(data.stats.totalFiles).toBe(5);
     for (const node of data.topNodes) {
       expect(node).toHaveProperty('file');
       expect(node).toHaveProperty('inEdges');
@@ -242,6 +255,46 @@ describe('fnDepsData', () => {
     expect(r.callees.map((c) => c.name)).toContain('validateToken');
     expect(r.callers.map((c) => c.name)).toContain('handleRoute');
   });
+
+  test('exact match ranks above substring match', () => {
+    const data = fnDepsData('authenticate', dbPath);
+    const names = data.results.map((r) => r.name);
+    // 'authenticate' is exact (100), 'preAuthenticate' is substring (10)
+    expect(names).toContain('authenticate');
+    expect(names).toContain('preAuthenticate');
+    expect(names.indexOf('authenticate')).toBeLessThan(names.indexOf('preAuthenticate'));
+  });
+
+  test('prefix match returns multiple results', () => {
+    const data = fnDepsData('auth', dbPath);
+    const names = data.results.map((r) => r.name);
+    expect(names).toContain('authenticate');
+    expect(names).toContain('authMiddleware');
+  });
+
+  test('--file scopes to a single file', () => {
+    const data = fnDepsData('auth', dbPath, { file: 'auth.js' });
+    for (const r of data.results) {
+      expect(r.file).toContain('auth.js');
+    }
+    // authMiddleware is in middleware.js, should be excluded
+    const names = data.results.map((r) => r.name);
+    expect(names).not.toContain('authMiddleware');
+  });
+
+  test('--kind method filters to methods only', () => {
+    // All fixtures are functions, so filtering by method should return empty
+    const data = fnDepsData('auth', dbPath, { kind: 'method' });
+    expect(data.results).toHaveLength(0);
+  });
+
+  test('--file and --kind work together', () => {
+    const data = fnDepsData('auth', dbPath, { file: 'auth.js', kind: 'function' });
+    for (const r of data.results) {
+      expect(r.file).toContain('auth.js');
+      expect(r.kind).toBe('function');
+    }
+  });
 });
 
 // ─── fnImpactData ──────────────────────────────────────────────────────
@@ -253,11 +306,12 @@ describe('fnImpactData', () => {
 
     const level1 = r.levels[1].map((n) => n.name);
     expect(level1).toContain('authMiddleware');
+    expect(level1).toContain('testAuthenticate');
 
     const level2 = r.levels[2].map((n) => n.name);
     expect(level2).toContain('handleRoute');
 
-    expect(r.totalDependents).toBe(2);
+    expect(r.totalDependents).toBe(3);
   });
 
   test('respects depth option', () => {
@@ -276,5 +330,143 @@ describe('diffImpactData', () => {
     const data = diffImpactData(dbPath);
     expect(data).toHaveProperty('error');
     expect(data.error).toMatch(/not a git repository/i);
+  });
+});
+
+// ─── explainData ──────────────────────────────────────────────────────
+
+describe('explainData', () => {
+  test('file-level: returns public/internal split with imports', () => {
+    const data = explainData('auth.js', dbPath);
+    expect(data.kind).toBe('file');
+    expect(data.results).toHaveLength(1);
+
+    const r = data.results[0];
+    expect(r.file).toBe('auth.js');
+    expect(r.symbolCount).toBe(2);
+    // Both authenticate and validateToken are called from middleware.js
+    expect(r.publicApi.map((s) => s.name)).toContain('authenticate');
+    expect(r.publicApi.map((s) => s.name)).toContain('validateToken');
+    // auth.js doesn't import anything
+    expect(r.imports).toHaveLength(0);
+    expect(r.importedBy.map((i) => i.file)).toContain('middleware.js');
+  });
+
+  test('file-level: data flow shows intra-file calls', () => {
+    const data = explainData('auth.js', dbPath);
+    const r = data.results[0];
+    const authFlow = r.dataFlow.find((df) => df.caller === 'authenticate');
+    expect(authFlow).toBeDefined();
+    expect(authFlow.callees).toContain('validateToken');
+  });
+
+  test('file-level: empty for unknown file', () => {
+    const data = explainData('nonexistent.js', dbPath);
+    expect(data.kind).toBe('file');
+    expect(data.results).toHaveLength(0);
+  });
+
+  test('function-level: callees and callers', () => {
+    const data = explainData('authMiddleware', dbPath);
+    expect(data.kind).toBe('function');
+    expect(data.results).toHaveLength(1);
+
+    const r = data.results[0];
+    expect(r.name).toBe('authMiddleware');
+    expect(r.callees.map((c) => c.name)).toContain('authenticate');
+    expect(r.callees.map((c) => c.name)).toContain('validateToken');
+    expect(r.callers.map((c) => c.name)).toContain('handleRoute');
+  });
+
+  test('function-level: empty for unknown', () => {
+    const data = explainData('nonexistentFunction', dbPath);
+    expect(data.kind).toBe('function');
+    expect(data.results).toHaveLength(0);
+  });
+
+  test('target detection: file path triggers file mode', () => {
+    const data = explainData('auth.js', dbPath);
+    expect(data.kind).toBe('file');
+  });
+
+  test('target detection: plain name triggers function mode', () => {
+    const data = explainData('authenticate', dbPath);
+    expect(data.kind).toBe('function');
+  });
+
+  test('target detection: path with slash triggers file mode', () => {
+    const data = explainData('src/auth.js', dbPath);
+    expect(data.kind).toBe('file');
+  });
+});
+
+// ─── --no-tests filtering ──────────────────────────────────────────────
+
+describe('--no-tests filtering', () => {
+  test('fileDepsData excludes test files from importedBy with noTests', () => {
+    const withTests = fileDepsData('auth.js', dbPath);
+    const withoutTests = fileDepsData('auth.js', dbPath, { noTests: true });
+    const r = withTests.results[0];
+    expect(r.importedBy.map((i) => i.file)).toContain('auth.test.js');
+    const rFiltered = withoutTests.results[0];
+    expect(rFiltered.importedBy.map((i) => i.file)).not.toContain('auth.test.js');
+  });
+});
+
+// ─── whereData ──────────────────────────────────────────────────────
+
+describe('whereData', () => {
+  test('symbol: finds definition with uses', () => {
+    const data = whereData('authMiddleware', dbPath);
+    expect(data.mode).toBe('symbol');
+    const r = data.results.find((r) => r.name === 'authMiddleware');
+    expect(r).toBeDefined();
+    expect(r.file).toBe('middleware.js');
+    expect(r.line).toBe(5);
+    expect(r.uses.map((u) => u.name)).toContain('handleRoute');
+  });
+
+  test('symbol: exported flag', () => {
+    const data = whereData('authenticate', dbPath);
+    const r = data.results.find((r) => r.name === 'authenticate');
+    expect(r).toBeDefined();
+    // authenticate is called from middleware.js (cross-file)
+    expect(r.exported).toBe(true);
+  });
+
+  test('symbol: empty for unknown', () => {
+    const data = whereData('nonexistent', dbPath);
+    expect(data.mode).toBe('symbol');
+    expect(data.results).toHaveLength(0);
+  });
+
+  test('symbol: multiple matches', () => {
+    const data = whereData('auth', dbPath);
+    const names = data.results.map((r) => r.name);
+    expect(names).toContain('authenticate');
+    expect(names).toContain('authMiddleware');
+  });
+
+  test('file: lists symbols and imports', () => {
+    const data = whereData('middleware.js', dbPath, { file: true });
+    expect(data.mode).toBe('file');
+    expect(data.results).toHaveLength(1);
+    const r = data.results[0];
+    expect(r.symbols.map((s) => s.name)).toContain('authMiddleware');
+    expect(r.imports).toContain('auth.js');
+    expect(r.importedBy).toContain('routes.js');
+  });
+
+  test('file: exported list', () => {
+    const data = whereData('middleware.js', dbPath, { file: true });
+    const r = data.results[0];
+    // authMiddleware is called from routes.js (cross-file)
+    expect(r.exported).toContain('authMiddleware');
+  });
+
+  test('file: empty for unknown', () => {
+    const data = whereData('nonexistent.js', dbPath, { file: true });
+    expect(data.mode).toBe('file');
+    expect(data.results).toHaveLength(0);
   });
 });

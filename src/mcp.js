@@ -8,6 +8,7 @@
 import { createRequire } from 'node:module';
 import { findCycles } from './cycles.js';
 import { findDbPath } from './db.js';
+import { ALL_SYMBOL_KINDS } from './queries.js';
 
 const REPO_PROP = {
   repo: {
@@ -81,6 +82,15 @@ const BASE_TOOLS = [
       properties: {
         name: { type: 'string', description: 'Function/method/class name (partial match)' },
         depth: { type: 'number', description: 'Transitive caller depth', default: 3 },
+        file: {
+          type: 'string',
+          description: 'Scope search to functions in this file (partial match)',
+        },
+        kind: {
+          type: 'string',
+          enum: ALL_SYMBOL_KINDS,
+          description: 'Filter to a specific symbol kind',
+        },
         no_tests: { type: 'boolean', description: 'Exclude test files', default: false },
       },
       required: ['name'],
@@ -95,6 +105,15 @@ const BASE_TOOLS = [
       properties: {
         name: { type: 'string', description: 'Function/method/class name (partial match)' },
         depth: { type: 'number', description: 'Max traversal depth', default: 5 },
+        file: {
+          type: 'string',
+          description: 'Scope search to functions in this file (partial match)',
+        },
+        kind: {
+          type: 'string',
+          enum: ALL_SYMBOL_KINDS,
+          description: 'Filter to a specific symbol kind',
+        },
         no_tests: { type: 'boolean', description: 'Exclude test files', default: false },
       },
       required: ['name'],
@@ -113,6 +132,15 @@ const BASE_TOOLS = [
           description: 'Include callee source up to N levels deep (0=no source, 1=direct)',
           default: 0,
         },
+        file: {
+          type: 'string',
+          description: 'Scope search to functions in this file (partial match)',
+        },
+        kind: {
+          type: 'string',
+          enum: ALL_SYMBOL_KINDS,
+          description: 'Filter to a specific symbol kind',
+        },
         no_source: {
           type: 'boolean',
           description: 'Skip source extraction (metadata only)',
@@ -126,6 +154,37 @@ const BASE_TOOLS = [
         },
       },
       required: ['name'],
+    },
+  },
+  {
+    name: 'explain',
+    description:
+      'Structural summary of a file or function: public/internal API, data flow, dependencies. No LLM needed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'File path or function name' },
+        no_tests: { type: 'boolean', description: 'Exclude test files', default: false },
+      },
+      required: ['target'],
+    },
+  },
+  {
+    name: 'where',
+    description:
+      'Find where a symbol is defined and used, or list symbols/imports/exports for a file. Minimal, fast lookup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Symbol name or file path' },
+        file_mode: {
+          type: 'boolean',
+          description: 'Treat target as file path (list symbols/imports/exports)',
+          default: false,
+        },
+        no_tests: { type: 'boolean', description: 'Exclude test files', default: false },
+      },
+      required: ['target'],
     },
   },
   {
@@ -299,6 +358,8 @@ export async function startMCPServer(customDbPath, options = {}) {
     fnDepsData,
     fnImpactData,
     contextData,
+    explainData,
+    whereData,
     diffImpactData,
     listFunctionsData,
   } = await import('./queries.js');
@@ -368,21 +429,36 @@ export async function startMCPServer(customDbPath, options = {}) {
         case 'fn_deps':
           result = fnDepsData(args.name, dbPath, {
             depth: args.depth,
+            file: args.file,
+            kind: args.kind,
             noTests: args.no_tests,
           });
           break;
         case 'fn_impact':
           result = fnImpactData(args.name, dbPath, {
             depth: args.depth,
+            file: args.file,
+            kind: args.kind,
             noTests: args.no_tests,
           });
           break;
         case 'context':
           result = contextData(args.name, dbPath, {
             depth: args.depth,
+            file: args.file,
+            kind: args.kind,
             noSource: args.no_source,
             noTests: args.no_tests,
             includeTests: args.include_tests,
+          });
+          break;
+        case 'explain':
+          result = explainData(args.target, dbPath, { noTests: args.no_tests });
+          break;
+        case 'where':
+          result = whereData(args.target, dbPath, {
+            file: args.file_mode,
+            noTests: args.no_tests,
           });
           break;
         case 'diff_impact':

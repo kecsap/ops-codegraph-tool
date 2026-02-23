@@ -17,6 +17,8 @@ const ALL_TOOL_NAMES = [
   'fn_deps',
   'fn_impact',
   'context',
+  'explain',
+  'where',
   'diff_impact',
   'semantic_search',
   'export_graph',
@@ -77,6 +79,9 @@ describe('TOOLS', () => {
     expect(fd.inputSchema.required).toContain('name');
     expect(fd.inputSchema.properties).toHaveProperty('depth');
     expect(fd.inputSchema.properties).toHaveProperty('no_tests');
+    expect(fd.inputSchema.properties).toHaveProperty('file');
+    expect(fd.inputSchema.properties).toHaveProperty('kind');
+    expect(fd.inputSchema.properties.kind.enum).toBeDefined();
   });
 
   it('fn_impact requires name parameter', () => {
@@ -84,6 +89,18 @@ describe('TOOLS', () => {
     expect(fi.inputSchema.required).toContain('name');
     expect(fi.inputSchema.properties).toHaveProperty('depth');
     expect(fi.inputSchema.properties).toHaveProperty('no_tests');
+    expect(fi.inputSchema.properties).toHaveProperty('file');
+    expect(fi.inputSchema.properties).toHaveProperty('kind');
+    expect(fi.inputSchema.properties.kind.enum).toBeDefined();
+  });
+
+  it('where requires target parameter', () => {
+    const w = TOOLS.find((t) => t.name === 'where');
+    expect(w).toBeDefined();
+    expect(w.inputSchema.required).toContain('target');
+    expect(w.inputSchema.properties).toHaveProperty('target');
+    expect(w.inputSchema.properties).toHaveProperty('file_mode');
+    expect(w.inputSchema.properties).toHaveProperty('no_tests');
   });
 
   it('diff_impact has no required parameters', () => {
@@ -211,6 +228,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(() => ({ name: 'test', results: [] })),
       fnImpactData: vi.fn(() => ({ name: 'test', results: [] })),
       contextData: vi.fn(() => ({ name: 'test', results: [] })),
+      explainData: vi.fn(() => ({ target: 'test', kind: 'function', results: [] })),
+      whereData: vi.fn(() => ({ target: 'test', mode: 'symbol', results: [] })),
       diffImpactData: vi.fn(() => ({ changedFiles: 0, affectedFunctions: [] })),
       listFunctionsData: vi.fn(() => ({ count: 0, functions: [] })),
     }));
@@ -271,6 +290,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: fnDepsMock,
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -279,10 +300,18 @@ describe('startMCPServer handler dispatch', () => {
     await startMCPServer('/tmp/test.db');
 
     const result = await handlers['tools/call']({
-      params: { name: 'fn_deps', arguments: { name: 'myFn', depth: 5, no_tests: true } },
+      params: {
+        name: 'fn_deps',
+        arguments: { name: 'myFn', depth: 5, file: 'src/app.js', kind: 'function', no_tests: true },
+      },
     });
     expect(result.isError).toBeUndefined();
-    expect(fnDepsMock).toHaveBeenCalledWith('myFn', '/tmp/test.db', { depth: 5, noTests: true });
+    expect(fnDepsMock).toHaveBeenCalledWith('myFn', '/tmp/test.db', {
+      depth: 5,
+      file: 'src/app.js',
+      kind: 'function',
+      noTests: true,
+    });
 
     vi.doUnmock('@modelcontextprotocol/sdk/server/index.js');
     vi.doUnmock('@modelcontextprotocol/sdk/server/stdio.js');
@@ -317,6 +346,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: fnImpactMock,
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -366,6 +397,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: diffImpactMock,
       listFunctionsData: vi.fn(),
     }));
@@ -420,6 +453,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: listFnMock,
     }));
@@ -475,6 +510,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -523,6 +560,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -572,6 +611,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -623,6 +664,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -677,6 +720,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -731,6 +776,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -776,6 +823,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -821,6 +870,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));
@@ -866,6 +917,8 @@ describe('startMCPServer handler dispatch', () => {
       fnDepsData: vi.fn(),
       fnImpactData: vi.fn(),
       contextData: vi.fn(),
+      explainData: vi.fn(),
+      whereData: vi.fn(),
       diffImpactData: vi.fn(),
       listFunctionsData: vi.fn(),
     }));

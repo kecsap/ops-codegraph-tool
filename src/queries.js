@@ -3,12 +3,69 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findCycles } from './cycles.js';
 import { findDbPath, openReadonlyOrFail } from './db.js';
+import { debug } from './logger.js';
 import { LANGUAGE_REGISTRY } from './parser.js';
+
+/**
+ * Resolve a file path relative to repoRoot, rejecting traversal outside the repo.
+ * Returns null if the resolved path escapes repoRoot.
+ */
+function safePath(repoRoot, file) {
+  const resolved = path.resolve(repoRoot, file);
+  if (!resolved.startsWith(repoRoot + path.sep) && resolved !== repoRoot) return null;
+  return resolved;
+}
 
 const TEST_PATTERN = /\.(test|spec)\.|__test__|__tests__|\.stories\./;
 function isTestFile(filePath) {
   return TEST_PATTERN.test(filePath);
 }
+
+export const FALSE_POSITIVE_NAMES = new Set([
+  'run',
+  'get',
+  'set',
+  'init',
+  'start',
+  'handle',
+  'main',
+  'new',
+  'create',
+  'update',
+  'delete',
+  'process',
+  'execute',
+  'call',
+  'apply',
+  'setup',
+  'render',
+  'build',
+  'load',
+  'save',
+  'find',
+  'make',
+  'open',
+  'close',
+  'reset',
+  'send',
+  'read',
+  'write',
+]);
+export const FALSE_POSITIVE_CALLER_THRESHOLD = 20;
+
+const FUNCTION_KINDS = ['function', 'method', 'class'];
+export const ALL_SYMBOL_KINDS = [
+  'function',
+  'method',
+  'class',
+  'interface',
+  'type',
+  'struct',
+  'enum',
+  'trait',
+  'record',
+  'module',
+];
 
 /**
  * Get all ancestor class names for a given class using extends edges.
@@ -58,6 +115,58 @@ function resolveMethodViaHierarchy(db, methodName) {
     }
   }
   return results;
+}
+
+/**
+ * Find nodes matching a name query, ranked by relevance.
+ * Scoring: exact=100, prefix=60, word-boundary=40, substring=10, plus fan-in tiebreaker.
+ */
+function findMatchingNodes(db, name, opts = {}) {
+  const kinds = opts.kind ? [opts.kind] : FUNCTION_KINDS;
+  const placeholders = kinds.map(() => '?').join(', ');
+  const params = [`%${name}%`, ...kinds];
+
+  let fileCondition = '';
+  if (opts.file) {
+    fileCondition = ' AND n.file LIKE ?';
+    params.push(`%${opts.file}%`);
+  }
+
+  const rows = db
+    .prepare(`
+      SELECT n.*, COALESCE(fi.cnt, 0) AS fan_in
+      FROM nodes n
+      LEFT JOIN (
+        SELECT target_id, COUNT(*) AS cnt FROM edges WHERE kind = 'calls' GROUP BY target_id
+      ) fi ON fi.target_id = n.id
+      WHERE n.name LIKE ? AND n.kind IN (${placeholders})${fileCondition}
+    `)
+    .all(...params);
+
+  const nodes = opts.noTests ? rows.filter((n) => !isTestFile(n.file)) : rows;
+
+  const lowerQuery = name.toLowerCase();
+  for (const node of nodes) {
+    const lowerName = node.name.toLowerCase();
+    const bareName = lowerName.includes('.') ? lowerName.split('.').pop() : lowerName;
+
+    let matchScore;
+    if (lowerName === lowerQuery || bareName === lowerQuery) {
+      matchScore = 100;
+    } else if (lowerName.startsWith(lowerQuery) || bareName.startsWith(lowerQuery)) {
+      matchScore = 60;
+    } else if (lowerName.includes(`.${lowerQuery}`) || lowerName.includes(`${lowerQuery}.`)) {
+      matchScore = 40;
+    } else {
+      matchScore = 10;
+    }
+
+    const fanInBonus = Math.min(Math.log2(node.fan_in + 1) * 5, 25);
+    node._relevance = matchScore + fanInBonus;
+  }
+
+  nodes.sort((a, b) => b._relevance - a._relevance);
+  return nodes;
 }
 
 function kindIcon(kind) {
@@ -132,8 +241,9 @@ export function queryNameData(name, customDbPath) {
   return { query: name, results };
 }
 
-export function impactAnalysisData(file, customDbPath) {
+export function impactAnalysisData(file, customDbPath, opts = {}) {
   const db = openReadonlyOrFail(customDbPath);
+  const noTests = opts.noTests || false;
   const fileNodes = db
     .prepare(`SELECT * FROM nodes WHERE file LIKE ? AND kind = 'file'`)
     .all(`%${file}%`);
@@ -162,7 +272,7 @@ export function impactAnalysisData(file, customDbPath) {
     `)
       .all(current);
     for (const dep of dependents) {
-      if (!visited.has(dep.id)) {
+      if (!visited.has(dep.id) && (!noTests || !isTestFile(dep.file))) {
         visited.add(dep.id);
         queue.push(dep.id);
         levels.set(dep.id, level + 1);
@@ -187,8 +297,17 @@ export function impactAnalysisData(file, customDbPath) {
   };
 }
 
-export function moduleMapData(customDbPath, limit = 20) {
+export function moduleMapData(customDbPath, limit = 20, opts = {}) {
   const db = openReadonlyOrFail(customDbPath);
+  const noTests = opts.noTests || false;
+
+  const testFilter = noTests
+    ? `AND n.file NOT LIKE '%.test.%'
+      AND n.file NOT LIKE '%.spec.%'
+      AND n.file NOT LIKE '%__test__%'
+      AND n.file NOT LIKE '%__tests__%'
+      AND n.file NOT LIKE '%.stories.%'`
+    : '';
 
   const nodes = db
     .prepare(`
@@ -197,9 +316,7 @@ export function moduleMapData(customDbPath, limit = 20) {
       (SELECT COUNT(*) FROM edges WHERE target_id = n.id AND kind != 'contains') as in_edges
     FROM nodes n
     WHERE n.kind = 'file'
-      AND n.file NOT LIKE '%.test.%'
-      AND n.file NOT LIKE '%.spec.%'
-      AND n.file NOT LIKE '%__test__%'
+      ${testFilter}
     ORDER BY (SELECT COUNT(*) FROM edges WHERE target_id = n.id AND kind != 'contains') DESC
     LIMIT ?
   `)
@@ -220,8 +337,9 @@ export function moduleMapData(customDbPath, limit = 20) {
   return { limit, topNodes, stats: { totalFiles, totalNodes, totalEdges } };
 }
 
-export function fileDepsData(file, customDbPath) {
+export function fileDepsData(file, customDbPath, opts = {}) {
   const db = openReadonlyOrFail(customDbPath);
+  const noTests = opts.noTests || false;
   const fileNodes = db
     .prepare(`SELECT * FROM nodes WHERE file LIKE ? AND kind = 'file'`)
     .all(`%${file}%`);
@@ -231,19 +349,21 @@ export function fileDepsData(file, customDbPath) {
   }
 
   const results = fileNodes.map((fn) => {
-    const importsTo = db
+    let importsTo = db
       .prepare(`
       SELECT n.file, e.kind as edge_kind FROM edges e JOIN nodes n ON e.target_id = n.id
       WHERE e.source_id = ? AND e.kind IN ('imports', 'imports-type')
     `)
       .all(fn.id);
+    if (noTests) importsTo = importsTo.filter((i) => !isTestFile(i.file));
 
-    const importedBy = db
+    let importedBy = db
       .prepare(`
       SELECT n.file, e.kind as edge_kind FROM edges e JOIN nodes n ON e.source_id = n.id
       WHERE e.target_id = ? AND e.kind IN ('imports', 'imports-type')
     `)
       .all(fn.id);
+    if (noTests) importedBy = importedBy.filter((i) => !isTestFile(i.file));
 
     const defs = db
       .prepare(`SELECT * FROM nodes WHERE file = ? AND kind != 'file' ORDER BY line`)
@@ -266,12 +386,7 @@ export function fnDepsData(name, customDbPath, opts = {}) {
   const depth = opts.depth || 3;
   const noTests = opts.noTests || false;
 
-  let nodes = db
-    .prepare(
-      `SELECT * FROM nodes WHERE name LIKE ? AND kind IN ('function', 'method', 'class') ORDER BY file, line`,
-    )
-    .all(`%${name}%`);
-  if (noTests) nodes = nodes.filter((n) => !isTestFile(n.file));
+  const nodes = findMatchingNodes(db, name, { noTests, file: opts.file, kind: opts.kind });
   if (nodes.length === 0) {
     db.close();
     return { name, results: [] };
@@ -391,10 +506,7 @@ export function fnImpactData(name, customDbPath, opts = {}) {
   const maxDepth = opts.depth || 5;
   const noTests = opts.noTests || false;
 
-  let nodes = db
-    .prepare(`SELECT * FROM nodes WHERE name LIKE ? AND kind IN ('function', 'method', 'class')`)
-    .all(`%${name}%`);
-  if (noTests) nodes = nodes.filter((n) => !isTestFile(n.file));
+  const nodes = findMatchingNodes(db, name, { noTests, file: opts.file, kind: opts.kind });
   if (nodes.length === 0) {
     db.close();
     return { name, results: [] };
@@ -695,6 +807,67 @@ export function statsData(customDbPath) {
     /* embeddings table may not exist */
   }
 
+  // Graph quality metrics
+  const totalCallable = db
+    .prepare("SELECT COUNT(*) as c FROM nodes WHERE kind IN ('function', 'method')")
+    .get().c;
+  const callableWithCallers = db
+    .prepare(`
+      SELECT COUNT(DISTINCT e.target_id) as c FROM edges e
+      JOIN nodes n ON e.target_id = n.id
+      WHERE e.kind = 'calls' AND n.kind IN ('function', 'method')
+    `)
+    .get().c;
+  const callerCoverage = totalCallable > 0 ? callableWithCallers / totalCallable : 0;
+
+  const totalCallEdges = db.prepare("SELECT COUNT(*) as c FROM edges WHERE kind = 'calls'").get().c;
+  const highConfCallEdges = db
+    .prepare("SELECT COUNT(*) as c FROM edges WHERE kind = 'calls' AND confidence >= 0.7")
+    .get().c;
+  const callConfidence = totalCallEdges > 0 ? highConfCallEdges / totalCallEdges : 0;
+
+  // False-positive warnings: generic names with > threshold callers
+  const fpRows = db
+    .prepare(`
+      SELECT n.name, n.file, n.line, COUNT(e.source_id) as caller_count
+      FROM nodes n
+      LEFT JOIN edges e ON n.id = e.target_id AND e.kind = 'calls'
+      WHERE n.kind IN ('function', 'method')
+      GROUP BY n.id
+      HAVING caller_count > ?
+      ORDER BY caller_count DESC
+    `)
+    .all(FALSE_POSITIVE_CALLER_THRESHOLD);
+  const falsePositiveWarnings = fpRows
+    .filter((r) =>
+      FALSE_POSITIVE_NAMES.has(r.name.includes('.') ? r.name.split('.').pop() : r.name),
+    )
+    .map((r) => ({ name: r.name, file: r.file, line: r.line, callerCount: r.caller_count }));
+
+  // Edges from suspicious nodes
+  let fpEdgeCount = 0;
+  for (const fp of falsePositiveWarnings) fpEdgeCount += fp.callerCount;
+  const falsePositiveRatio = totalCallEdges > 0 ? fpEdgeCount / totalCallEdges : 0;
+
+  const score = Math.round(
+    callerCoverage * 40 + callConfidence * 40 + (1 - falsePositiveRatio) * 20,
+  );
+
+  const quality = {
+    score,
+    callerCoverage: {
+      ratio: callerCoverage,
+      covered: callableWithCallers,
+      total: totalCallable,
+    },
+    callConfidence: {
+      ratio: callConfidence,
+      highConf: highConfCallEdges,
+      total: totalCallEdges,
+    },
+    falsePositiveWarnings,
+  };
+
   db.close();
   return {
     nodes: { total: totalNodes, byKind: nodesByKind },
@@ -703,6 +876,7 @@ export function statsData(customDbPath) {
     cycles: { fileLevel: fileCycles.length, functionLevel: fnCycles.length },
     hotspots,
     embeddings,
+    quality,
   };
 }
 
@@ -779,6 +953,26 @@ export function stats(customDbPath, opts = {}) {
     console.log('\nEmbeddings: not built');
   }
 
+  // Quality
+  if (data.quality) {
+    const q = data.quality;
+    const cc = q.callerCoverage;
+    const cf = q.callConfidence;
+    console.log(`\nGraph Quality: ${q.score}/100`);
+    console.log(
+      `  Caller coverage:  ${(cc.ratio * 100).toFixed(1)}% (${cc.covered}/${cc.total} functions have >=1 caller)`,
+    );
+    console.log(
+      `  Call confidence:  ${(cf.ratio * 100).toFixed(1)}% (${cf.highConf}/${cf.total} call edges are high-confidence)`,
+    );
+    if (q.falsePositiveWarnings.length > 0) {
+      console.log('  False-positive warnings:');
+      for (const fp of q.falsePositiveWarnings) {
+        console.log(`    ! ${fp.name} (${fp.callerCount} callers) -- ${fp.file}:${fp.line}`);
+      }
+    }
+  }
+
   console.log();
 }
 
@@ -815,7 +1009,7 @@ export function queryName(name, customDbPath, opts = {}) {
 }
 
 export function impactAnalysis(file, customDbPath, opts = {}) {
-  const data = impactAnalysisData(file, customDbPath);
+  const data = impactAnalysisData(file, customDbPath, { noTests: opts.noTests });
   if (opts.json) {
     console.log(JSON.stringify(data, null, 2));
     return;
@@ -846,7 +1040,7 @@ export function impactAnalysis(file, customDbPath, opts = {}) {
 }
 
 export function moduleMap(customDbPath, limit = 20, opts = {}) {
-  const data = moduleMapData(customDbPath, limit);
+  const data = moduleMapData(customDbPath, limit, { noTests: opts.noTests });
   if (opts.json) {
     console.log(JSON.stringify(data, null, 2));
     return;
@@ -874,7 +1068,7 @@ export function moduleMap(customDbPath, limit = 20, opts = {}) {
 }
 
 export function fileDeps(file, customDbPath, opts = {}) {
-  const data = fileDepsData(file, customDbPath);
+  const data = fileDepsData(file, customDbPath, { noTests: opts.noTests });
   if (opts.json) {
     console.log(JSON.stringify(data, null, 2));
     return;
@@ -949,13 +1143,15 @@ export function fnDeps(name, customDbPath, opts = {}) {
 
 function readSourceRange(repoRoot, file, startLine, endLine) {
   try {
-    const absPath = path.resolve(repoRoot, file);
+    const absPath = safePath(repoRoot, file);
+    if (!absPath) return null;
     const content = fs.readFileSync(absPath, 'utf-8');
     const lines = content.split('\n');
     const start = Math.max(0, (startLine || 1) - 1);
     const end = Math.min(lines.length, endLine || startLine + 50);
     return lines.slice(start, end).join('\n');
-  } catch {
+  } catch (e) {
+    debug(`readSourceRange failed for ${file}: ${e.message}`);
     return null;
   }
 }
@@ -1065,12 +1261,7 @@ export function contextData(name, customDbPath, opts = {}) {
   const dbPath = findDbPath(customDbPath);
   const repoRoot = path.resolve(path.dirname(dbPath), '..');
 
-  let nodes = db
-    .prepare(
-      `SELECT * FROM nodes WHERE name LIKE ? AND kind IN ('function', 'method', 'class') ORDER BY file, line`,
-    )
-    .all(`%${name}%`);
-  if (noTests) nodes = nodes.filter((n) => !isTestFile(n.file));
+  let nodes = findMatchingNodes(db, name, { noTests, file: opts.file, kind: opts.kind });
   if (nodes.length === 0) {
     db.close();
     return { name, results: [] };
@@ -1084,11 +1275,16 @@ export function contextData(name, customDbPath, opts = {}) {
   function getFileLines(file) {
     if (fileCache.has(file)) return fileCache.get(file);
     try {
-      const absPath = path.resolve(repoRoot, file);
+      const absPath = safePath(repoRoot, file);
+      if (!absPath) {
+        fileCache.set(file, null);
+        return null;
+      }
       const lines = fs.readFileSync(absPath, 'utf-8').split('\n');
       fileCache.set(file, lines);
       return lines;
-    } catch {
+    } catch (e) {
+      debug(`getFileLines failed for ${file}: ${e.message}`);
       fileCache.set(file, null);
       return null;
     }
@@ -1339,6 +1535,461 @@ export function context(name, customDbPath, opts = {}) {
       console.log();
     }
   }
+}
+
+// ─── explainData ────────────────────────────────────────────────────────
+
+function isFileLikeTarget(target) {
+  if (target.includes('/') || target.includes('\\')) return true;
+  const ext = path.extname(target).toLowerCase();
+  if (!ext) return false;
+  for (const entry of LANGUAGE_REGISTRY) {
+    if (entry.extensions.includes(ext)) return true;
+  }
+  return false;
+}
+
+function explainFileImpl(db, target, getFileLines) {
+  const fileNodes = db
+    .prepare(`SELECT * FROM nodes WHERE file LIKE ? AND kind = 'file'`)
+    .all(`%${target}%`);
+  if (fileNodes.length === 0) return [];
+
+  return fileNodes.map((fn) => {
+    const symbols = db
+      .prepare(`SELECT * FROM nodes WHERE file = ? AND kind != 'file' ORDER BY line`)
+      .all(fn.file);
+
+    // IDs of symbols that have incoming calls from other files (public)
+    const publicIds = new Set(
+      db
+        .prepare(
+          `SELECT DISTINCT e.target_id FROM edges e
+           JOIN nodes caller ON e.source_id = caller.id
+           JOIN nodes target ON e.target_id = target.id
+           WHERE target.file = ? AND caller.file != ? AND e.kind = 'calls'`,
+        )
+        .all(fn.file, fn.file)
+        .map((r) => r.target_id),
+    );
+
+    const fileLines = getFileLines(fn.file);
+    const mapSymbol = (s) => ({
+      name: s.name,
+      kind: s.kind,
+      line: s.line,
+      summary: fileLines ? extractSummary(fileLines, s.line) : null,
+      signature: fileLines ? extractSignature(fileLines, s.line) : null,
+    });
+
+    const publicApi = symbols.filter((s) => publicIds.has(s.id)).map(mapSymbol);
+    const internal = symbols.filter((s) => !publicIds.has(s.id)).map(mapSymbol);
+
+    // Imports / importedBy
+    const imports = db
+      .prepare(
+        `SELECT n.file FROM edges e JOIN nodes n ON e.target_id = n.id
+         WHERE e.source_id = ? AND e.kind IN ('imports', 'imports-type')`,
+      )
+      .all(fn.id)
+      .map((r) => ({ file: r.file }));
+
+    const importedBy = db
+      .prepare(
+        `SELECT n.file FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind IN ('imports', 'imports-type')`,
+      )
+      .all(fn.id)
+      .map((r) => ({ file: r.file }));
+
+    // Intra-file data flow
+    const intraEdges = db
+      .prepare(
+        `SELECT caller.name as caller_name, callee.name as callee_name
+         FROM edges e
+         JOIN nodes caller ON e.source_id = caller.id
+         JOIN nodes callee ON e.target_id = callee.id
+         WHERE caller.file = ? AND callee.file = ? AND e.kind = 'calls'
+         ORDER BY caller.line`,
+      )
+      .all(fn.file, fn.file);
+
+    const dataFlowMap = new Map();
+    for (const edge of intraEdges) {
+      if (!dataFlowMap.has(edge.caller_name)) dataFlowMap.set(edge.caller_name, []);
+      dataFlowMap.get(edge.caller_name).push(edge.callee_name);
+    }
+    const dataFlow = [...dataFlowMap.entries()].map(([caller, callees]) => ({
+      caller,
+      callees,
+    }));
+
+    // Line count: prefer node_metrics (actual), fall back to MAX(end_line)
+    const metric = db
+      .prepare(`SELECT nm.line_count FROM node_metrics nm WHERE nm.node_id = ?`)
+      .get(fn.id);
+    let lineCount = metric?.line_count || null;
+    if (!lineCount) {
+      const maxLine = db
+        .prepare(`SELECT MAX(end_line) as max_end FROM nodes WHERE file = ?`)
+        .get(fn.file);
+      lineCount = maxLine?.max_end || null;
+    }
+
+    return {
+      file: fn.file,
+      lineCount,
+      symbolCount: symbols.length,
+      publicApi,
+      internal,
+      imports,
+      importedBy,
+      dataFlow,
+    };
+  });
+}
+
+function explainFunctionImpl(db, target, noTests, getFileLines) {
+  let nodes = db
+    .prepare(
+      `SELECT * FROM nodes WHERE name LIKE ? AND kind IN ('function','method','class','interface','type','struct','enum','trait','record','module') ORDER BY file, line`,
+    )
+    .all(`%${target}%`);
+  if (noTests) nodes = nodes.filter((n) => !isTestFile(n.file));
+  if (nodes.length === 0) return [];
+
+  return nodes.slice(0, 10).map((node) => {
+    const fileLines = getFileLines(node.file);
+    const lineCount = node.end_line ? node.end_line - node.line + 1 : null;
+    const summary = fileLines ? extractSummary(fileLines, node.line) : null;
+    const signature = fileLines ? extractSignature(fileLines, node.line) : null;
+
+    const callees = db
+      .prepare(
+        `SELECT n.name, n.kind, n.file, n.line
+         FROM edges e JOIN nodes n ON e.target_id = n.id
+         WHERE e.source_id = ? AND e.kind = 'calls'`,
+      )
+      .all(node.id)
+      .map((c) => ({ name: c.name, kind: c.kind, file: c.file, line: c.line }));
+
+    let callers = db
+      .prepare(
+        `SELECT n.name, n.kind, n.file, n.line
+         FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind = 'calls'`,
+      )
+      .all(node.id)
+      .map((c) => ({ name: c.name, kind: c.kind, file: c.file, line: c.line }));
+    if (noTests) callers = callers.filter((c) => !isTestFile(c.file));
+
+    const testCallerRows = db
+      .prepare(
+        `SELECT DISTINCT n.file FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind = 'calls'`,
+      )
+      .all(node.id);
+    const relatedTests = testCallerRows
+      .filter((r) => isTestFile(r.file))
+      .map((r) => ({ file: r.file }));
+
+    return {
+      name: node.name,
+      kind: node.kind,
+      file: node.file,
+      line: node.line,
+      endLine: node.end_line || null,
+      lineCount,
+      summary,
+      signature,
+      callees,
+      callers,
+      relatedTests,
+    };
+  });
+}
+
+export function explainData(target, customDbPath, opts = {}) {
+  const db = openReadonlyOrFail(customDbPath);
+  const noTests = opts.noTests || false;
+  const kind = isFileLikeTarget(target) ? 'file' : 'function';
+
+  const dbPath = findDbPath(customDbPath);
+  const repoRoot = path.resolve(path.dirname(dbPath), '..');
+
+  const fileCache = new Map();
+  function getFileLines(file) {
+    if (fileCache.has(file)) return fileCache.get(file);
+    try {
+      const absPath = safePath(repoRoot, file);
+      if (!absPath) {
+        fileCache.set(file, null);
+        return null;
+      }
+      const lines = fs.readFileSync(absPath, 'utf-8').split('\n');
+      fileCache.set(file, lines);
+      return lines;
+    } catch (e) {
+      debug(`getFileLines failed for ${file}: ${e.message}`);
+      fileCache.set(file, null);
+      return null;
+    }
+  }
+
+  const results =
+    kind === 'file'
+      ? explainFileImpl(db, target, getFileLines)
+      : explainFunctionImpl(db, target, noTests, getFileLines);
+
+  db.close();
+  return { target, kind, results };
+}
+
+export function explain(target, customDbPath, opts = {}) {
+  const data = explainData(target, customDbPath, opts);
+  if (opts.json) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+  if (data.results.length === 0) {
+    console.log(`No ${data.kind === 'file' ? 'file' : 'function/symbol'} matching "${target}"`);
+    return;
+  }
+
+  if (data.kind === 'file') {
+    for (const r of data.results) {
+      const publicCount = r.publicApi.length;
+      const internalCount = r.internal.length;
+      const lineInfo = r.lineCount ? `${r.lineCount} lines, ` : '';
+      console.log(`\n# ${r.file}`);
+      console.log(
+        `  ${lineInfo}${r.symbolCount} symbols (${publicCount} exported, ${internalCount} internal)`,
+      );
+
+      if (r.imports.length > 0) {
+        console.log(`  Imports: ${r.imports.map((i) => i.file).join(', ')}`);
+      }
+      if (r.importedBy.length > 0) {
+        console.log(`  Imported by: ${r.importedBy.map((i) => i.file).join(', ')}`);
+      }
+
+      if (r.publicApi.length > 0) {
+        console.log(`\n## Exported`);
+        for (const s of r.publicApi) {
+          const sig = s.signature?.params != null ? `(${s.signature.params})` : '';
+          const summary = s.summary ? `  -- ${s.summary}` : '';
+          console.log(`  ${kindIcon(s.kind)} ${s.name}${sig} :${s.line}${summary}`);
+        }
+      }
+
+      if (r.internal.length > 0) {
+        console.log(`\n## Internal`);
+        for (const s of r.internal) {
+          const sig = s.signature?.params != null ? `(${s.signature.params})` : '';
+          const summary = s.summary ? `  -- ${s.summary}` : '';
+          console.log(`  ${kindIcon(s.kind)} ${s.name}${sig} :${s.line}${summary}`);
+        }
+      }
+
+      if (r.dataFlow.length > 0) {
+        console.log(`\n## Data Flow`);
+        for (const df of r.dataFlow) {
+          console.log(`  ${df.caller} -> ${df.callees.join(', ')}`);
+        }
+      }
+      console.log();
+    }
+  } else {
+    for (const r of data.results) {
+      const lineRange = r.endLine ? `${r.line}-${r.endLine}` : `${r.line}`;
+      const lineInfo = r.lineCount ? `${r.lineCount} lines` : '';
+      const summaryPart = r.summary ? ` | ${r.summary}` : '';
+      console.log(`\n# ${r.name} (${r.kind})  ${r.file}:${lineRange}`);
+      if (lineInfo || r.summary) {
+        console.log(`  ${lineInfo}${summaryPart}`);
+      }
+      if (r.signature) {
+        if (r.signature.params != null) console.log(`  Parameters: (${r.signature.params})`);
+        if (r.signature.returnType) console.log(`  Returns: ${r.signature.returnType}`);
+      }
+
+      if (r.callees.length > 0) {
+        console.log(`\n## Calls (${r.callees.length})`);
+        for (const c of r.callees) {
+          console.log(`  ${kindIcon(c.kind)} ${c.name}  ${c.file}:${c.line}`);
+        }
+      }
+
+      if (r.callers.length > 0) {
+        console.log(`\n## Called by (${r.callers.length})`);
+        for (const c of r.callers) {
+          console.log(`  ${kindIcon(c.kind)} ${c.name}  ${c.file}:${c.line}`);
+        }
+      }
+
+      if (r.relatedTests.length > 0) {
+        const label = r.relatedTests.length === 1 ? 'file' : 'files';
+        console.log(`\n## Tests (${r.relatedTests.length} ${label})`);
+        for (const t of r.relatedTests) {
+          console.log(`  ${t.file}`);
+        }
+      }
+
+      if (r.callees.length === 0 && r.callers.length === 0) {
+        console.log(`  (no call edges found -- may be invoked dynamically or via re-exports)`);
+      }
+      console.log();
+    }
+  }
+}
+
+// ─── whereData ──────────────────────────────────────────────────────────
+
+function whereSymbolImpl(db, target, noTests) {
+  const placeholders = ALL_SYMBOL_KINDS.map(() => '?').join(', ');
+  let nodes = db
+    .prepare(
+      `SELECT * FROM nodes WHERE name LIKE ? AND kind IN (${placeholders}) ORDER BY file, line`,
+    )
+    .all(`%${target}%`, ...ALL_SYMBOL_KINDS);
+  if (noTests) nodes = nodes.filter((n) => !isTestFile(n.file));
+
+  return nodes.map((node) => {
+    const crossFileCallers = db
+      .prepare(
+        `SELECT COUNT(*) as cnt FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind = 'calls' AND n.file != ?`,
+      )
+      .get(node.id, node.file);
+    const exported = crossFileCallers.cnt > 0;
+
+    let uses = db
+      .prepare(
+        `SELECT n.name, n.file, n.line FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind = 'calls'`,
+      )
+      .all(node.id);
+    if (noTests) uses = uses.filter((u) => !isTestFile(u.file));
+
+    return {
+      name: node.name,
+      kind: node.kind,
+      file: node.file,
+      line: node.line,
+      exported,
+      uses: uses.map((u) => ({ name: u.name, file: u.file, line: u.line })),
+    };
+  });
+}
+
+function whereFileImpl(db, target) {
+  const fileNodes = db
+    .prepare(`SELECT * FROM nodes WHERE file LIKE ? AND kind = 'file'`)
+    .all(`%${target}%`);
+  if (fileNodes.length === 0) return [];
+
+  return fileNodes.map((fn) => {
+    const symbols = db
+      .prepare(`SELECT * FROM nodes WHERE file = ? AND kind != 'file' ORDER BY line`)
+      .all(fn.file);
+
+    const imports = db
+      .prepare(
+        `SELECT n.file FROM edges e JOIN nodes n ON e.target_id = n.id
+         WHERE e.source_id = ? AND e.kind IN ('imports', 'imports-type')`,
+      )
+      .all(fn.id)
+      .map((r) => r.file);
+
+    const importedBy = db
+      .prepare(
+        `SELECT n.file FROM edges e JOIN nodes n ON e.source_id = n.id
+         WHERE e.target_id = ? AND e.kind IN ('imports', 'imports-type')`,
+      )
+      .all(fn.id)
+      .map((r) => r.file);
+
+    const exportedIds = new Set(
+      db
+        .prepare(
+          `SELECT DISTINCT e.target_id FROM edges e
+           JOIN nodes caller ON e.source_id = caller.id
+           JOIN nodes target ON e.target_id = target.id
+           WHERE target.file = ? AND caller.file != ? AND e.kind = 'calls'`,
+        )
+        .all(fn.file, fn.file)
+        .map((r) => r.target_id),
+    );
+
+    const exported = symbols.filter((s) => exportedIds.has(s.id)).map((s) => s.name);
+
+    return {
+      file: fn.file,
+      symbols: symbols.map((s) => ({ name: s.name, kind: s.kind, line: s.line })),
+      imports,
+      importedBy,
+      exported,
+    };
+  });
+}
+
+export function whereData(target, customDbPath, opts = {}) {
+  const db = openReadonlyOrFail(customDbPath);
+  const noTests = opts.noTests || false;
+  const fileMode = opts.file || false;
+
+  const results = fileMode ? whereFileImpl(db, target) : whereSymbolImpl(db, target, noTests);
+
+  db.close();
+  return { target, mode: fileMode ? 'file' : 'symbol', results };
+}
+
+export function where(target, customDbPath, opts = {}) {
+  const data = whereData(target, customDbPath, opts);
+  if (opts.json) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+
+  if (data.results.length === 0) {
+    console.log(
+      data.mode === 'file'
+        ? `No file matching "${target}" in graph`
+        : `No symbol matching "${target}" in graph`,
+    );
+    return;
+  }
+
+  if (data.mode === 'symbol') {
+    for (const r of data.results) {
+      const tag = r.exported ? '  (exported)' : '';
+      console.log(`\n${kindIcon(r.kind)} ${r.name}  ${r.file}:${r.line}${tag}`);
+      if (r.uses.length > 0) {
+        const useStrs = r.uses.map((u) => `${u.file}:${u.line}`);
+        console.log(`  Used in: ${useStrs.join(', ')}`);
+      } else {
+        console.log('  No uses found');
+      }
+    }
+  } else {
+    for (const r of data.results) {
+      console.log(`\n# ${r.file}`);
+      if (r.symbols.length > 0) {
+        const symStrs = r.symbols.map((s) => `${s.name}:${s.line}`);
+        console.log(`  Symbols: ${symStrs.join(', ')}`);
+      }
+      if (r.imports.length > 0) {
+        console.log(`  Imports: ${r.imports.join(', ')}`);
+      }
+      if (r.importedBy.length > 0) {
+        console.log(`  Imported by: ${r.importedBy.join(', ')}`);
+      }
+      if (r.exported.length > 0) {
+        console.log(`  Exported: ${r.exported.join(', ')}`);
+      }
+    }
+  }
+  console.log();
 }
 
 export function fnImpact(name, customDbPath, opts = {}) {
