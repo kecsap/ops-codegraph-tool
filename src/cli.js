@@ -188,7 +188,7 @@ program
   .option('-f, --file <path>', 'Scope search to functions in this file (partial match)')
   .option('-k, --kind <kind>', 'Filter to a specific symbol kind')
   .option('--no-source', 'Metadata only (skip source extraction)')
-  .option('--include-test-source', 'Include test source code')
+  .option('--with-test-source', 'Include test source code')
   .option('-T, --no-tests', 'Exclude test/spec files from results')
   .option('--include-tests', 'Include test/spec files (overrides excludeTests config)')
   .option('-j, --json', 'Output as JSON')
@@ -203,7 +203,7 @@ program
       kind: opts.kind,
       noSource: !opts.source,
       noTests: resolveNoTests(opts),
-      includeTests: opts.includeTestSource,
+      includeTests: opts.withTestSource,
       json: opts.json,
     });
   });
