@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from './config.js';
 import { EXTENSIONS, IGNORE_DIRS, normalizePath } from './constants.js';
@@ -830,7 +829,8 @@ export async function buildGraph(rootDir, opts = {}) {
   writeJournalHeader(rootDir, Date.now());
 
   if (!opts.skipRegistry) {
-    const tmpDir = path.resolve(os.tmpdir());
+    const { tmpdir } = await import('node:os');
+    const tmpDir = path.resolve(tmpdir());
     const resolvedRoot = path.resolve(rootDir);
     if (resolvedRoot.startsWith(tmpDir)) {
       debug(`Skipping auto-registration for temp directory: ${resolvedRoot}`);
