@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file. See [commit
 
 * **native:** fix function-scoped `const` declarations being incorrectly extracted as top-level constants ([#344](https://github.com/optave/codegraph/pull/344))
 
+
 ## [3.0.2](https://github.com/optave/codegraph/compare/v3.0.1...v3.0.2) (2026-03-04)
 
 **Dataflow goes multi-language, build performance recovery, and native engine parity fixes.** This patch extends dataflow analysis from JS/TS-only to all 11 supported languages, recovers build performance lost after CFG/dataflow became default-on, fixes language-aware identifier collection in dataflow, and closes a native engine scoping bug for constants.
