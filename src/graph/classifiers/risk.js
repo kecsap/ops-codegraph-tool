@@ -2,6 +2,10 @@
  * Risk scoring — pure logic, no DB.
  */
 
+// Weights sum to 1.0. Complexity gets the highest weight because cognitive load
+// is the strongest predictor of defect density. Fan-in and churn are next as
+// they reflect coupling and volatility. Role adds architectural context, and MI
+// (maintainability index) is a weaker composite signal, so it gets the least.
 export const DEFAULT_WEIGHTS = {
   fanIn: 0.25,
   complexity: 0.3,
@@ -10,6 +14,10 @@ export const DEFAULT_WEIGHTS = {
   mi: 0.1,
 };
 
+// Role weights reflect structural importance: core modules are central to the
+// dependency graph, utilities are widely imported, entry points are API
+// surfaces. Adapters bridge subsystems but are replaceable. Leaves and dead
+// code have minimal downstream impact.
 export const ROLE_WEIGHTS = {
   core: 1.0,
   utility: 0.9,
