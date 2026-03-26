@@ -5,6 +5,7 @@ import type { Tree } from 'web-tree-sitter';
 import { Language, Parser, Query } from 'web-tree-sitter';
 import { debug, warn } from '../infrastructure/logger.js';
 import { getNative, getNativePackageVersion, loadNative } from '../infrastructure/native.js';
+import { toErrorMessage } from '../shared/errors.js';
 import type {
   EngineMode,
   ExtractorOutput,
@@ -438,9 +439,7 @@ async function backfillTypeMap(
     try {
       code = fs.readFileSync(filePath, 'utf-8');
     } catch (e) {
-      debug(
-        `backfillTypeMap: failed to read ${filePath}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      debug(`backfillTypeMap: failed to read ${filePath}: ${toErrorMessage(e)}`);
       return { typeMap: new Map(), backfilled: false };
     }
   }
@@ -457,9 +456,7 @@ async function backfillTypeMap(
       try {
         extracted.tree.delete();
       } catch (e) {
-        debug(
-          `backfillTypeMap: WASM tree cleanup failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        debug(`backfillTypeMap: WASM tree cleanup failed: ${toErrorMessage(e)}`);
       }
     }
   }
@@ -573,18 +570,14 @@ export async function parseFilesAuto(
               symbols._typeMapBackfilled = true;
             }
           } catch (e) {
-            debug(
-              `batchExtract: typeMap backfill failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
+            debug(`batchExtract: typeMap backfill failed: ${toErrorMessage(e)}`);
           } finally {
             // Free the WASM tree to prevent memory accumulation across repeated builds
             if (extracted?.tree && typeof extracted.tree.delete === 'function') {
               try {
                 extracted.tree.delete();
               } catch (e) {
-                debug(
-                  `batchExtract: WASM tree cleanup failed: ${e instanceof Error ? e.message : String(e)}`,
-                );
+                debug(`batchExtract: WASM tree cleanup failed: ${toErrorMessage(e)}`);
               }
             }
           }
