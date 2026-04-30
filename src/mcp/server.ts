@@ -98,17 +98,15 @@ async function resolveDbPath(
   return dbPath;
 }
 
-function validateMultiRepoAccess(multiRepo: boolean, name: string, args: { repo?: string }): void {
+function validateMultiRepoAccess(multiRepo: boolean, args: { repo?: string }): void {
   if (!multiRepo && args.repo) {
     throw new ConfigError(
       'Multi-repo access is disabled. Restart with `codegraph mcp --multi-repo` to access other repositories.',
     );
   }
-  if (!multiRepo && name === 'list_repos') {
-    throw new ConfigError(
-      'Multi-repo access is disabled. Restart with `codegraph mcp --multi-repo` to list repositories.',
-    );
-  }
+  // Note: the `list_repos` tool is excluded from `enabledToolNames` when
+  // `multiRepo` is false (see `buildToolList`), so any call to it is rejected
+  // earlier in `createCallToolHandler` with an "Unknown tool" error.
 }
 
 /**
@@ -172,7 +170,7 @@ function createCallToolHandler(
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
       }
 
-      validateMultiRepoAccess(multiRepo, name, args);
+      validateMultiRepoAccess(multiRepo, args);
 
       const dbPath = await resolveDbPath(customDbPath, args, allowedRepos);
 
